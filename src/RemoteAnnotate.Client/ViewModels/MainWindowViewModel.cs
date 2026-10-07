@@ -64,6 +64,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private int drawingOpacityPercent = PointerSettings.DefaultDrawingOpacityPercent;
     private string annotationColor = AnnotationColors.Default;
     private bool isServerAddressVerified;
+    private bool isServerConnectionTestFailed;
     private bool hasServerPassword;
     private bool isChangingServer;
     private bool isApplyingServerChange;
@@ -498,8 +499,38 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsServerAddressVerified
     {
         get => isServerAddressVerified;
-        private set => SetProperty(ref isServerAddressVerified, value);
+        private set
+        {
+            if (SetProperty(ref isServerAddressVerified, value))
+            {
+                RaisePropertyChanged(nameof(ServerConnectionTestIcon));
+            }
+        }
     }
+
+    private bool IsServerConnectionTestFailed
+    {
+        get => isServerConnectionTestFailed;
+        set
+        {
+            if (SetProperty(ref isServerConnectionTestFailed, value))
+            {
+                RaisePropertyChanged(nameof(ServerConnectionTestIcon));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The icon name (see Resources/Icons.xaml) on the relay test button: a plain plug until a
+    /// test has run, then a plug with a checkmark or a disconnected plug for its result. It goes
+    /// back to the plain plug whenever the verdict is dropped, so a stale result never sits next
+    /// to a new relay or a reopened Settings pane.
+    /// </summary>
+    public string ServerConnectionTestIcon => IsServerAddressVerified
+        ? "PlugConnectedCheckmark"
+        : IsServerConnectionTestFailed
+            ? "PlugDisconnected"
+            : "PlugConnected";
 
     public string ServerConnectionTestMessage
     {
@@ -1562,6 +1593,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         IsServerAddressVerified = false;
+        IsServerConnectionTestFailed = false;
         ServerVersionLabel = string.Empty;
         ServerConnectionTestMessage = "Testing connection...";
         var result = await serverConnectionTester.TestAccessAsync(
@@ -1570,6 +1602,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (!result.IsSuccessful)
         {
             ServerConnectionTestMessage = result.Message;
+            IsServerConnectionTestFailed = true;
             return;
         }
 
@@ -1633,6 +1666,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         CancelServerChange();
         ResetSettingsDraft();
         IsServerAddressVerified = false;
+        IsServerConnectionTestFailed = false;
         ServerConnectionTestMessage = string.Empty;
         ServerVersionLabel = string.Empty;
         IsSettingsOpen = true;
@@ -2022,6 +2056,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         ServerConnectionTestMessage = string.Empty;
         ServerVersionLabel = string.Empty;
         IsServerAddressVerified = false;
+        IsServerConnectionTestFailed = false;
         if (addressChanged)
         {
             IsSettingsOpen = false;

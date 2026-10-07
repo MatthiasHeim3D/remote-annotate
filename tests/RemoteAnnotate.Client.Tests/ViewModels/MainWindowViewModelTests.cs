@@ -721,6 +721,29 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task TestServerConnection_IconShowsTheResult()
+    {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        using var overlay = new FakeOverlayService();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester);
+        viewModel.ToggleSettingsCommand.Execute(null);
+        Assert.Equal("PlugConnected", viewModel.ServerConnectionTestIcon);
+
+        await viewModel.TestServerConnectionAsync();
+        Assert.Equal("PlugConnectedCheckmark", viewModel.ServerConnectionTestIcon);
+
+        tester.Result = new ServerConnectionTestResult(false, "The server could not be reached.");
+        await viewModel.TestServerConnectionAsync();
+        Assert.Equal("PlugDisconnected", viewModel.ServerConnectionTestIcon);
+    }
+
+    [Fact]
     public void DisconnectedServer_ShowsReachabilityGuidance()
     {
         using var overlay = new FakeOverlayService();
