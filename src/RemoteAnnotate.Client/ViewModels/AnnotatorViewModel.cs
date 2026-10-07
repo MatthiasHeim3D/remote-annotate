@@ -154,7 +154,7 @@ public sealed class AnnotatorViewModel : ObservableObject, IDisposable
 
     public string AnnotatingActionLabel => IsAnnotating ? "Stop annotating" : "Enable annotating";
 
-    public string AnnotatingActionIcon => IsAnnotating ? "\uE71A" : "\uE768";
+    public string AnnotatingActionIcon => IsAnnotating ? "Stop" : "Play";
 
     /// <summary>
     /// True while the host has this annotator paused. The session stays up and the target region
