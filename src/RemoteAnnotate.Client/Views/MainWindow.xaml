@@ -1346,8 +1346,7 @@
                               Content="Launch at startup" />
 
                     <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}"
-                               Text="Connection" />
-                    <TextBlock Margin="0,0,0,6" Text="Server address" />
+                               Text="Relay" />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -1368,30 +1367,39 @@
                                 Content="Change"
                                 ToolTip="Set a new server address and password" />
                     </Grid>
-                    <StackPanel Margin="0,4,0,0"
+                    <!-- One fixed-height line, so the result appearing never moves what is below. -->
+                    <StackPanel Height="30"
+                                Margin="0,4,0,0"
                                 Orientation="Horizontal">
-                        <Button Style="{StaticResource LinkButtonStyle}"
+                        <Button Style="{StaticResource IconButtonStyle}"
                                 Command="{Binding TestServerConnectionCommand}"
-                                Content="Test connection"
-                                ToolTip="Test the connection to this server" />
-                    </StackPanel>
-                    <StackPanel Margin="0,6,0,0"
-                                Orientation="Horizontal"
-                                Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   FontSize="14"
-                                   Foreground="#6CCB7F"
-                                   Text="&#xE73E;" />
-                        <TextBlock Margin="7,0,0,0"
+                                Content="&#xE72C;"
+                                ToolTip="Test the connection to this relay" />
+                        <StackPanel Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Foreground="#6CCB7F"
+                                       Text="&#xE73E;" />
+                            <TextBlock Margin="7,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="11"
+                                       Foreground="#8C8C8C"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{Binding ServerVersionLabel}"
+                                       Visibility="{Binding HasServerVersion, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+                        <TextBlock Margin="8,0,0,0"
                                    VerticalAlignment="Center"
-                                   FontSize="11"
-                                   Foreground="#8C8C8C"
+                                   Style="{StaticResource ValidationMessageStyle}"
+                                   MaxWidth="260"
                                    TextTrimming="CharacterEllipsis"
-                                   Text="{Binding ServerVersionLabel}"
-                                   Visibility="{Binding HasServerVersion, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                   TextWrapping="NoWrap"
+                                   ToolTip="{Binding ServerConnectionTestMessage}"
+                                   Text="{Binding ServerConnectionTestMessage}" />
                     </StackPanel>
-                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
-                               Text="{Binding ServerConnectionTestMessage}" />
                     <Border Margin="0,10,0,0"
                             Padding="10,8"
                             Background="#3A3222"
@@ -1483,13 +1491,13 @@
                            VerticalAlignment="Center"
                            FontSize="18"
                            FontWeight="SemiBold"
-                           Text="Change server" />
+                           Text="Relay settings" />
                 <StackPanel Grid.Row="1">
                     <TextBlock Margin="0,0,0,8"
                                FontSize="11"
                                Foreground="#AFAFAF"
                                TextWrapping="Wrap"
-                               Text="The address and the password are checked together and only saved once the server accepts both. Leave the password empty for a server that has none." />
+                               Text="Leave the password empty for a server that has none." />
                     <TextBlock Margin="0,0,0,6" Text="New server address" />
                     <Grid>
                         <Grid.ColumnDefinitions>
