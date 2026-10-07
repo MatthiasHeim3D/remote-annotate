@@ -1498,7 +1498,7 @@
                                Foreground="#AFAFAF"
                                TextWrapping="Wrap"
                                Text="Leave the password empty for a server that has none." />
-                    <TextBlock Margin="0,0,0,6" Text="New server address" />
+                    <TextBlock Margin="0,0,0,6" Text="New relay address" />
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -1521,7 +1521,7 @@
                     </Grid>
                     <TextBlock Style="{StaticResource ValidationMessageStyle}"
                                Text="{Binding NewServerAddressValidationMessage}" />
-                    <TextBlock Margin="0,12,0,6" Text="Server password" />
+                    <TextBlock Margin="0,12,0,6" Text="Relay password" />
                     <PasswordBox x:Name="NewServerPasswordBox"
                                  IsEnabled="{Binding CanEditServerChange}"
                                  PasswordChanged="OnNewServerPasswordChanged" />
