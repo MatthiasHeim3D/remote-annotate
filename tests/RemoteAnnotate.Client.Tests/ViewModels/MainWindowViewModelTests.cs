@@ -446,6 +446,34 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task ChangingTheServerAddress_DropsThePasswordOfTheOldServerAtOnce()
+    {
+        using var testSettings = new TemporaryClientSettings("https://old.example.test");
+        testSettings.Settings.Server.PasswordKey = "old-server-key";
+        using var overlay = new FakeOverlayService();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
+        var relay = new FakeRelayClient();
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            hostRelayClient: relay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester);
+        viewModel.ToggleSettingsCommand.Execute(null);
+        Assert.True(viewModel.HasServerPassword);
+
+        viewModel.ServerAddressInput = "new.example.test";
+        await viewModel.TestServerConnectionAsync();
+
+        Assert.False(viewModel.HasServerPassword);
+        Assert.True(viewModel.ShowServerPasswordEditor);
+        Assert.False(viewModel.ShowServerPasswordSetState);
+        Assert.Null(testSettings.Settings.Server.PasswordKey);
+        Assert.Null(relay.ServerPasswordKey);
+    }
+
+    [Fact]
     public async Task TestServerConnection_SuccessSavesAddressAndShowsCheckmark()
     {
         using var testSettings = new TemporaryClientSettings(string.Empty);
