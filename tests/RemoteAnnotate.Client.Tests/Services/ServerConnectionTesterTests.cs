@@ -77,11 +77,66 @@ public sealed class ServerConnectionTesterTests
         Assert.Contains("503", result.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task TestAccessAsync_PresentsTheKeyAndAcceptsARelayThatAdmitsIt()
+    {
+        using var tester = CreateTester(RelayPayload);
+
+        var result = await tester.Tester.TestAccessAsync("https://relay.example.test", "the-key");
+
+        Assert.True(result.IsSuccessful);
+        Assert.Equal("1.2.3", result.ServerVersion);
+        Assert.Equal("Bearer the-key", tester.Handler.NegotiateAuthorization);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task TestAccessAsync_RelayThatTurnsTheKeyAwayIsRejected(HttpStatusCode status)
+    {
+        using var tester = CreateTester(RelayPayload, negotiateStatusCode: status);
+
+        var result = await tester.Tester.TestAccessAsync("https://relay.example.test", "wrong-key");
+
+        Assert.False(result.IsSuccessful);
+        Assert.Contains("did not accept this password", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestAccessAsync_RelayThatNeedsAPasswordSaysSoWhenNoneIsGiven()
+    {
+        using var tester = CreateTester(
+            RelayPayload,
+            negotiateStatusCode: HttpStatusCode.Unauthorized);
+
+        var result = await tester.Tester.TestAccessAsync("https://relay.example.test", null);
+
+        Assert.False(result.IsSuccessful);
+        Assert.Null(tester.Handler.NegotiateAuthorization);
+        Assert.Contains("requires a password", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TestAccessAsync_UnreachableOrForeignAddressFailsBeforeTheKeyIsSent()
+    {
+        using var tester = CreateTester(versionPayload: null);
+
+        var result = await tester.Tester.TestAccessAsync("https://stranger.example.test", "the-key");
+
+        Assert.False(result.IsSuccessful);
+        Assert.False(tester.Handler.NegotiateWasRequested);
+    }
+
     private static TesterScope CreateTester(
         string? versionPayload,
         string versionMediaType = "application/json",
-        HttpStatusCode healthStatusCode = HttpStatusCode.OK) =>
-        new(new StubHandler(versionPayload, versionMediaType, healthStatusCode));
+        HttpStatusCode healthStatusCode = HttpStatusCode.OK,
+        HttpStatusCode negotiateStatusCode = HttpStatusCode.OK) =>
+        new(new StubHandler(
+            versionPayload,
+            versionMediaType,
+            healthStatusCode,
+            negotiateStatusCode));
 
     private sealed class TesterScope : IDisposable
     {
@@ -97,6 +152,8 @@ public sealed class ServerConnectionTesterTests
 
         public ServerConnectionTester Tester { get; }
 
+        public StubHandler Handler => handler;
+
         public void Dispose()
         {
             httpClient.Dispose();
@@ -107,8 +164,13 @@ public sealed class ServerConnectionTesterTests
     private sealed class StubHandler(
         string? versionPayload,
         string versionMediaType,
-        HttpStatusCode healthStatusCode) : HttpMessageHandler
+        HttpStatusCode healthStatusCode,
+        HttpStatusCode negotiateStatusCode) : HttpMessageHandler
     {
+        public bool NegotiateWasRequested { get; private set; }
+
+        public string? NegotiateAuthorization { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -117,6 +179,13 @@ public sealed class ServerConnectionTesterTests
             if (string.Equals(path, "/health", StringComparison.Ordinal))
             {
                 return Task.FromResult(new HttpResponseMessage(healthStatusCode));
+            }
+
+            if (string.Equals(path, "/hubs/pointer/negotiate", StringComparison.Ordinal))
+            {
+                NegotiateWasRequested = true;
+                NegotiateAuthorization = request.Headers.Authorization?.ToString();
+                return Task.FromResult(new HttpResponseMessage(negotiateStatusCode));
             }
 
             if (string.Equals(path, "/version", StringComparison.Ordinal)

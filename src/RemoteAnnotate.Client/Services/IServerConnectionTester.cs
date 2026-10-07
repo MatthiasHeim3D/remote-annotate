@@ -5,6 +5,17 @@ public interface IServerConnectionTester
     Task<ServerConnectionTestResult> TestAsync(
         string serverAddress,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs <see cref="TestAsync"/> and then presents <paramref name="passwordKey"/> to the relay
+    /// the way a client connecting to it would, without opening a connection or touching the live
+    /// ones. A relay that is reachable but turns the key away is reported as a failure, so a
+    /// success means this address and this password work together.
+    /// </summary>
+    Task<ServerConnectionTestResult> TestAccessAsync(
+        string serverAddress,
+        string? passwordKey,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

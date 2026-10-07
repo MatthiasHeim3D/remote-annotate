@@ -27,7 +27,12 @@ public sealed partial class MainWindowBindingTests
     [InlineData(nameof(MainWindowViewModel.RoomValidationMessage))]
     [InlineData(nameof(MainWindowViewModel.ServerPasswordWarning))]
     [InlineData(nameof(MainWindowViewModel.ShowServerPasswordWarning))]
-    public void SettingsBindsTheRoomAndPasswordProperties(string path)
+    [InlineData(nameof(MainWindowViewModel.SavedServerAddressDisplay))]
+    [InlineData(nameof(MainWindowViewModel.ChangeServerCommand))]
+    [InlineData(nameof(MainWindowViewModel.NewServerAddressInput))]
+    [InlineData(nameof(MainWindowViewModel.ApplyServerChangeCommand))]
+    [InlineData(nameof(MainWindowViewModel.CancelServerChangeCommand))]
+    public void SettingsBindsTheRoomPasswordAndServerPaneProperties(string path)
     {
         Assert.Contains(path, BindingPaths());
     }

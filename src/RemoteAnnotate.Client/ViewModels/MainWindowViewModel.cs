@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Windows.Input;
 using System.Windows.Threading;
 using RemoteAnnotate.Client.Configuration;
@@ -22,10 +23,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private const int AnnotatingPollMilliseconds = 300;
 
-    private readonly AsyncRelayCommand applyServerPasswordCommand;
+    private readonly AsyncRelayCommand applyServerChangeCommand;
     private readonly AsyncRelayCommand approveAnnotatorCommand;
     private readonly SemaphoreSlim availabilityUpdateGate = new(1, 1);
-    private readonly RelayCommand changeServerPasswordCommand;
     private readonly AsyncRelayCommand disconnectAllConnectionsCommand;
     private readonly AsyncRelayCommand togglePauseAllCommand;
     private readonly Dictionary<string, long> lastPointerReceivedAt = new(StringComparer.Ordinal);
@@ -56,7 +56,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private bool isAvailabilityMenuOpen;
     private bool isSettingsOpen;
     private string profilePicturePath;
-    private string serverAddressInput;
     private string userName;
     private int maximumAnnotatorConnections;
     private bool isLaunchAtStartup;
@@ -66,17 +65,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private string annotationColor = AnnotationColors.Default;
     private bool isServerAddressVerified;
     private bool hasServerPassword;
-    private bool isChangingServerPassword;
+    private bool isChangingServer;
+    private bool isApplyingServerChange;
+    private string newServerAddressInput = string.Empty;
+    private string newServerPasswordInput = string.Empty;
+    private string serverChangeMessage = string.Empty;
+    private CancellationTokenSource? serverChangeCancellation;
     private bool serverPasswordRequired;
     private bool hasRelayCapabilities;
-    private string serverPasswordInput = string.Empty;
     private string roomInput = RoomName.DefaultDisplayName;
-    private bool pendingRelayReinitialization;
-    private string? lastTestedServerAddress;
-    private bool lastServerConnectionTestSucceeded;
     private string serverConnectionTestMessage = string.Empty;
     private string serverVersionLabel = string.Empty;
-    private readonly string activeServerAddress;
 
     public event EventHandler<ServerAddressChangeRequestedEventArgs>? ServerAddressChangeRequested;
 
@@ -103,11 +102,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         this.serverPasswordStore = serverPasswordStore;
         hasServerPassword = !string.IsNullOrWhiteSpace(clientSettings?.Server.PasswordKey);
         roomInput = clientSettings?.Server.Room ?? RoomName.DefaultDisplayName;
-        var configuredServerAddress = clientSettings?.Server.BaseUrl
-            ?? hostRelayClient?.ServerUrl
-            ?? string.Empty;
-        activeServerAddress = configuredServerAddress;
-        serverAddressInput = RemoveHttpsPrefix(configuredServerAddress);
         userName = clientSettings?.Profile.UserName ?? Environment.UserName;
         profilePicturePath = clientSettings?.Profile.PicturePath ?? string.Empty;
         maximumAnnotatorConnections = clientSettings?.Host.MaximumAnnotatorConnections ?? 2;
@@ -203,12 +197,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             }
         });
         CloseSettingsCommand = new AsyncRelayCommand(_ => CloseSettingsAsync());
-        // Testing an address that is already saved is allowed on purpose: it is the only way to
-        // confirm a relay is still reachable without editing the address first.
+        // Tests the saved address with the saved password, so it is the way to confirm the
+        // relay is still reachable and still accepts this client without changing anything.
         testServerConnectionCommand = new AsyncRelayCommand(
             _ => TestServerConnectionAsync(),
-            _ => string.IsNullOrEmpty(ServerAddressValidationMessage)
-                && !string.IsNullOrWhiteSpace(ServerAddress));
+            _ => !string.IsNullOrWhiteSpace(SavedServerAddress));
         ToggleAvailabilityMenuCommand = new AsyncRelayCommand(async _ =>
         {
             if (IsSettingsOpen)
@@ -222,18 +215,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
             IsAvailabilityMenuOpen = !IsAvailabilityMenuOpen;
         });
-        ClearServerPasswordCommand = new AsyncRelayCommand(
-            _ => ClearServerPasswordAsync(),
-            _ => HasServerPassword);
-        changeServerPasswordCommand = new RelayCommand(
-            _ => BeginServerPasswordChange(),
-            _ => HasServerPassword);
-        applyServerPasswordCommand = new AsyncRelayCommand(
-            _ => ApplyServerPasswordDraftAsync(),
-            _ => ServerPasswordInput.Length > 0
-                && string.IsNullOrEmpty(ServerPasswordValidationMessage));
-        CancelServerPasswordChangeCommand = new RelayCommand(
-            _ => CancelServerPasswordChange());
+        ChangeServerCommand = new RelayCommand(_ => BeginServerChange());
+        applyServerChangeCommand = new AsyncRelayCommand(
+            _ => ApplyServerChangeAsync(),
+            _ => CanApplyServerChange);
+        CancelServerChangeCommand = new RelayCommand(_ => CancelServerChange());
         incrementMaximumAnnotatorsCommand = new RelayCommand(
             _ => MaximumAnnotatorConnections++,
             _ => MaximumAnnotatorConnections < 16);
@@ -372,42 +358,87 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsSettingsOpen
     {
         get => isSettingsOpen;
-        set => SetProperty(ref isSettingsOpen, value);
-    }
-
-    public string ServerAddress => string.IsNullOrWhiteSpace(ServerAddressInput)
-        ? string.Empty
-        : $"https://{ServerAddressInput.Trim()}";
-
-    public string ServerAddressInput
-    {
-        get => serverAddressInput;
         set
         {
-            var address = RemoveHttpsPrefix(value ?? string.Empty);
-            if (SetProperty(ref serverAddressInput, address))
+            if (SetProperty(ref isSettingsOpen, value))
             {
-                lastTestedServerAddress = null;
-                lastServerConnectionTestSucceeded = false;
-                IsServerAddressVerified = false;
-                ServerConnectionTestMessage = string.Empty;
-                ServerVersionLabel = string.Empty;
-                RaisePropertyChanged(nameof(ServerAddress));
-                RaisePropertyChanged(nameof(ServerAddressValidationMessage));
-                RaiseServerAddressCommandState();
+                RaisePropertyChanged(nameof(ShowSettingsPage));
+                RaisePropertyChanged(nameof(ShowServerChangePane));
             }
         }
     }
 
-    public string ServerAddressValidationMessage
+    /// <summary>
+    /// The address the client is set to use, shown on the settings page. It can only be changed
+    /// together with the password, in the pane <see cref="ChangeServerCommand"/> opens.
+    /// </summary>
+    public string SavedServerAddress => RemoveHttpsPrefix(
+        clientSettings?.Server.BaseUrl ?? hostRelayClient?.ServerUrl ?? string.Empty);
+
+    public string SavedServerAddressDisplay =>
+        string.IsNullOrWhiteSpace(SavedServerAddress) ? "Not set" : SavedServerAddress;
+
+    /// <summary>True while the settings page itself is showing rather than the server pane.</summary>
+    public bool ShowSettingsPage => IsSettingsOpen && !IsChangingServer;
+
+    public bool ShowServerChangePane => IsSettingsOpen && IsChangingServer;
+
+    public bool IsChangingServer
+    {
+        get => isChangingServer;
+        private set
+        {
+            if (SetProperty(ref isChangingServer, value))
+            {
+                RaisePropertyChanged(nameof(ShowSettingsPage));
+                RaisePropertyChanged(nameof(ShowServerChangePane));
+            }
+        }
+    }
+
+    public bool IsApplyingServerChange
+    {
+        get => isApplyingServerChange;
+        private set
+        {
+            if (SetProperty(ref isApplyingServerChange, value))
+            {
+                RaisePropertyChanged(nameof(CanEditServerChange));
+                applyServerChangeCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool CanEditServerChange => !IsApplyingServerChange;
+
+    public string NewServerAddress => string.IsNullOrWhiteSpace(NewServerAddressInput)
+        ? string.Empty
+        : $"https://{NewServerAddressInput.Trim()}";
+
+    public string NewServerAddressInput
+    {
+        get => newServerAddressInput;
+        set
+        {
+            var address = RemoveHttpsPrefix(value ?? string.Empty);
+            if (SetProperty(ref newServerAddressInput, address))
+            {
+                ServerChangeMessage = string.Empty;
+                RaisePropertyChanged(nameof(NewServerAddress));
+                RaisePropertyChanged(nameof(NewServerAddressValidationMessage));
+                applyServerChangeCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string NewServerAddressValidationMessage
     {
         get
         {
-            var input = ServerAddressInput.Trim();
-            if (input.Length == 0
-                && !string.IsNullOrWhiteSpace(clientSettings?.Server.BaseUrl))
+            var input = NewServerAddressInput.Trim();
+            if (input.Length == 0)
             {
-                return "Enter a server address.";
+                return string.Empty;
             }
 
             if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
@@ -421,12 +452,46 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             return ClientSettings.TryNormalizeServerAddress(
-                ServerAddress,
+                NewServerAddress,
                 out _,
                 out var validationMessage)
                 ? string.Empty
                 : validationMessage;
         }
+    }
+
+    /// <summary>
+    /// The draft from the password box. It is derived and discarded when the change is applied,
+    /// and is never written to the preferences file or shown back to the user.
+    /// </summary>
+    public string NewServerPasswordInput
+    {
+        get => newServerPasswordInput;
+        set
+        {
+            if (SetProperty(ref newServerPasswordInput, value ?? string.Empty))
+            {
+                ServerChangeMessage = string.Empty;
+                RaisePropertyChanged(nameof(NewServerPasswordValidationMessage));
+                applyServerChangeCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string NewServerPasswordValidationMessage =>
+        NewServerPasswordInput.Length == 0
+            || ServerPasswordKey.IsValidPassword(NewServerPasswordInput)
+            ? string.Empty
+            : $"Use at least {ServerPasswordKey.MinimumPasswordLength} characters.";
+
+    /// <summary>
+    /// What the last check of the new server said: "Checking..." while it runs, then the reason
+    /// it was refused. Cleared by the next edit, so a stale verdict never sits next to new input.
+    /// </summary>
+    public string ServerChangeMessage
+    {
+        get => serverChangeMessage;
+        private set => SetProperty(ref serverChangeMessage, value);
     }
 
     public bool IsServerAddressVerified
@@ -460,23 +525,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool HasServerVersion => ServerVersionLabel.Length > 0;
 
-    /// <summary>
-    /// The draft from the password box. It is derived and discarded when settings are saved,
-    /// and is never written to the preferences file or shown back to the user.
-    /// </summary>
-    public string ServerPasswordInput
-    {
-        get => serverPasswordInput;
-        set
-        {
-            if (SetProperty(ref serverPasswordInput, value ?? string.Empty))
-            {
-                RaisePropertyChanged(nameof(ServerPasswordValidationMessage));
-                applyServerPasswordCommand.RaiseCanExecuteChanged();
-            }
-        }
-    }
-
     public bool HasServerPassword
     {
         get => hasServerPassword;
@@ -500,26 +548,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             }
         }
     }
-
-    /// <summary>
-    /// A stored password cannot be shown back, so the box is only offered when there is nothing to
-    /// show: no password is set yet, or the user asked to replace the one that is.
-    /// </summary>
-    public bool IsChangingServerPassword
-    {
-        get => isChangingServerPassword;
-        private set
-        {
-            if (SetProperty(ref isChangingServerPassword, value))
-            {
-                RaiseServerPasswordProperties();
-            }
-        }
-    }
-
-    public bool ShowServerPasswordEditor => !HasServerPassword || IsChangingServerPassword;
-
-    public bool ShowServerPasswordSetState => HasServerPassword && !IsChangingServerPassword;
 
     /// <summary>The relay refused the password this client presented, or its lack of one.</summary>
     public bool IsServerPasswordRejected =>
@@ -545,12 +573,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             : !HasServerPassword
                 ? "No server password is set. A relay that requires one will not accept this client."
                 : string.Empty;
-
-    public string ServerPasswordValidationMessage =>
-        ServerPasswordInput.Length == 0
-            || ServerPasswordKey.IsValidPassword(ServerPasswordInput)
-            ? string.Empty
-            : $"Use at least {ServerPasswordKey.MinimumPasswordLength} characters.";
 
     /// <summary>
     /// The room typed in Settings. Unlike the password this is plain text that is stored, shown
@@ -786,13 +808,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public ICommand ToggleAvailabilityMenuCommand { get; }
 
-    public ICommand ClearServerPasswordCommand { get; }
+    public ICommand ChangeServerCommand { get; }
 
-    public ICommand ChangeServerPasswordCommand => changeServerPasswordCommand;
+    public ICommand ApplyServerChangeCommand => applyServerChangeCommand;
 
-    public ICommand ApplyServerPasswordCommand => applyServerPasswordCommand;
-
-    public ICommand CancelServerPasswordChangeCommand { get; }
+    public ICommand CancelServerChangeCommand { get; }
 
     public ICommand IncrementMaximumAnnotatorsCommand => incrementMaximumAnnotatorsCommand;
 
@@ -1497,67 +1517,43 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         approveAnnotatorCommand.RaiseCanExecuteChanged();
     }
 
+    /// <summary>
+    /// Checks the saved address with the saved password. Nothing is changed by it: the address
+    /// and the password are only ever replaced together, by the server pane.
+    /// </summary>
     internal async Task TestServerConnectionAsync()
     {
+        var savedServerAddress = clientSettings?.Server.BaseUrl ?? string.Empty;
         if (clientSettings is null)
         {
             SetStatus("Settings are not available in this client configuration.", true);
             return;
         }
 
-        if (!TryGetRequestedServerAddress(out var requestedServerAddress))
+        if (string.IsNullOrWhiteSpace(savedServerAddress))
         {
-            ServerConnectionTestMessage = string.IsNullOrEmpty(ServerAddressValidationMessage)
-                ? "Enter a server address to test the connection."
-                : ServerAddressValidationMessage;
+            ServerConnectionTestMessage = "No server is set. Use Change to set one.";
             return;
         }
 
+        IsServerAddressVerified = false;
+        ServerVersionLabel = string.Empty;
         ServerConnectionTestMessage = "Testing connection...";
-        var result = await serverConnectionTester.TestAsync(requestedServerAddress);
-        lastTestedServerAddress = requestedServerAddress;
-        lastServerConnectionTestSucceeded = result.IsSuccessful;
-        ServerVersionLabel = result.IsSuccessful && !string.IsNullOrWhiteSpace(result.ServerVersion)
-            ? $"Server version {result.ServerVersion}"
-            : string.Empty;
+        var result = await serverConnectionTester.TestAccessAsync(
+            savedServerAddress,
+            clientSettings.Server.PasswordKey);
         if (!result.IsSuccessful)
         {
-            IsServerAddressVerified = false;
             ServerConnectionTestMessage = result.Message;
             return;
         }
 
-        try
-        {
-            if (!TryApproveServerAddressChange(requestedServerAddress))
-            {
-                ResetServerAddressDraft();
-                return;
-            }
-
-            var addressIsNew = !string.Equals(
-                clientSettings.Server.BaseUrl,
-                requestedServerAddress,
-                StringComparison.Ordinal);
-            PersistSettings(requestedServerAddress);
-            pendingRelayReinitialization = !string.Equals(
-                activeServerAddress,
-                requestedServerAddress,
-                StringComparison.Ordinal);
-            ServerConnectionTestMessage = string.Empty;
-            IsServerAddressVerified = true;
-            RaiseServerAddressCommandState();
-            SetStatus(
-                addressIsNew
-                    ? "Server connection verified and address saved."
-                    : "Server connection verified.",
-                false);
-        }
-        catch (Exception exception)
-        {
-            SetStatus($"Settings could not be saved: {exception.Message}", true);
-            ServerConnectionTestMessage = $"The address could not be saved: {exception.Message}";
-        }
+        ServerVersionLabel = !string.IsNullOrWhiteSpace(result.ServerVersion)
+            ? $"Server version {result.ServerVersion}"
+            : string.Empty;
+        ServerConnectionTestMessage = string.Empty;
+        IsServerAddressVerified = true;
+        SetStatus("Server connection verified.", false);
     }
 
     private void OnAnnotatorJoinCancelled(object? sender, AnnotatorJoinCancelledEventArgs e)
@@ -1582,38 +1578,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        CancelServerChange();
         try
         {
-            await ApplyServerPasswordDraftAsync();
-            if (HasServerAddressChanged)
-            {
-                if (!TryGetRequestedServerAddress(out var requestedServerAddress))
-                {
-                    ResetServerAddressDraft();
-                }
-                else
-                {
-                    var currentAddressWasTested = string.Equals(
-                        lastTestedServerAddress,
-                        requestedServerAddress,
-                        StringComparison.Ordinal);
-                    if (!currentAddressWasTested)
-                    {
-                        await TestServerConnectionAsync();
-                    }
-
-                    if (HasServerAddressChanged
-                        && (!string.Equals(
-                                lastTestedServerAddress,
-                                requestedServerAddress,
-                                StringComparison.Ordinal)
-                            || !lastServerConnectionTestSucceeded))
-                    {
-                        ResetServerAddressDraft();
-                    }
-                }
-            }
-
             PersistSettings(clientSettings.Server.BaseUrl);
             IsSettingsOpen = false;
             SetStatus("Settings saved.", false);
@@ -1621,12 +1588,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception exception)
         {
             SetStatus($"Settings could not be saved: {exception.Message}", true);
-            return;
-        }
-
-        if (pendingRelayReinitialization)
-        {
-            RelayReinitializationRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -1644,8 +1605,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OpenSettings()
     {
-        ServerPasswordInput = string.Empty;
-        IsChangingServerPassword = false;
+        CancelServerChange();
         ResetSettingsDraft();
         IsServerAddressVerified = false;
         ServerConnectionTestMessage = string.Empty;
@@ -1653,30 +1613,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         IsSettingsOpen = true;
     }
 
-    private bool HasServerAddressChanged
+    private bool TryGetNewServerAddress(out string requestedServerAddress)
     {
-        get
-        {
-            if (!ClientSettings.TryNormalizeServerAddress(
-                    ServerAddress,
-                    out var requestedServerAddress,
-                    out _))
-            {
-                return true;
-            }
-
-            return !string.Equals(
-                clientSettings?.Server.BaseUrl ?? activeServerAddress,
-                requestedServerAddress,
-                StringComparison.Ordinal);
-        }
-    }
-
-    private bool TryGetRequestedServerAddress(out string requestedServerAddress)
-    {
-        if (!string.IsNullOrEmpty(ServerAddressValidationMessage)
+        if (!string.IsNullOrEmpty(NewServerAddressValidationMessage)
             || !ClientSettings.TryNormalizeServerAddress(
-                ServerAddress,
+                NewServerAddress,
                 out requestedServerAddress,
                 out _)
             || string.IsNullOrWhiteSpace(requestedServerAddress))
@@ -1733,6 +1674,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         // The annotation colour is deliberately absent: it was already applied the moment it was
         // picked, so saving it here would only repeat that.
         startupRegistrationService?.SetEnabled(IsLaunchAtStartup);
+        RaisePropertyChanged(nameof(SavedServerAddress));
+        RaisePropertyChanged(nameof(SavedServerAddressDisplay));
         RaiseServerAddressCommandState();
     }
 
@@ -1752,13 +1695,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         hostRelayClient?.SetRoomAsync(Room) ?? Task.CompletedTask,
         Annotator.SetRoomAsync(Room));
 
-    private void ResetServerAddressDraft()
-    {
-        ServerAddressInput = RemoveHttpsPrefix(clientSettings?.Server.BaseUrl ?? string.Empty);
-        ServerConnectionTestMessage = string.Empty;
-        ServerVersionLabel = string.Empty;
-    }
-
     private void RaiseServerAddressCommandState() =>
         testServerConnectionCommand.RaiseCanExecuteChanged();
 
@@ -1769,7 +1705,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        ServerAddressInput = RemoveHttpsPrefix(clientSettings.Server.BaseUrl);
         UserName = clientSettings.Profile.UserName;
         ProfilePicturePath = clientSettings.Profile.PicturePath;
         MaximumAnnotatorConnections = clientSettings.Host.MaximumAnnotatorConnections;
@@ -1917,51 +1852,183 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         cancellation?.Cancel();
     }
 
+    private bool CanApplyServerChange =>
+        !IsApplyingServerChange
+        && NewServerAddressInput.Trim().Length > 0
+        && string.IsNullOrEmpty(NewServerAddressValidationMessage)
+        && string.IsNullOrEmpty(NewServerPasswordValidationMessage);
+
+    private void BeginServerChange()
+    {
+        ResetServerChangeDraft();
+        IsChangingServer = true;
+    }
+
     /// <summary>
-    /// Derives the relay key from the draft password, stores it protected, and hands it to both
-    /// relay connections. The password itself is used here and nowhere else.
+    /// Leaves the server pane without changing anything, whether or not a check is running.
     /// </summary>
-    internal async Task ApplyServerPasswordDraftAsync()
+    private void CancelServerChange()
     {
-        var draft = ServerPasswordInput;
-        if (draft.Length == 0)
+        serverChangeCancellation?.Cancel();
+        ResetServerChangeDraft();
+        IsChangingServer = false;
+    }
+
+    private void ResetServerChangeDraft()
+    {
+        NewServerAddressInput = string.Empty;
+        NewServerPasswordInput = string.Empty;
+        ServerChangeMessage = string.Empty;
+    }
+
+    /// <summary>
+    /// Checks the new address together with the new password against the relay and only then
+    /// saves them, as one step. Until the relay has accepted both, nothing is stored and the
+    /// live connections are left alone, so a correct address with a wrong password can never
+    /// end up applied.
+    /// </summary>
+    internal async Task ApplyServerChangeAsync()
+    {
+        if (clientSettings is null || IsApplyingServerChange)
         {
             return;
         }
 
-        if (!ServerPasswordKey.IsValidPassword(draft))
+        if (!TryGetNewServerAddress(out var requestedServerAddress))
         {
-            SetStatus(ServerPasswordValidationMessage, true);
+            ServerChangeMessage = string.IsNullOrEmpty(NewServerAddressValidationMessage)
+                ? "Enter the new server address."
+                : NewServerAddressValidationMessage;
             return;
         }
 
-        var key = await Task.Run(() => ServerPasswordKey.Derive(draft));
-        ServerPasswordInput = string.Empty;
-        serverPasswordStore?.Save(key);
-        HasServerPassword = true;
-        IsChangingServerPassword = false;
+        if (!string.IsNullOrEmpty(NewServerPasswordValidationMessage))
+        {
+            ServerChangeMessage = NewServerPasswordValidationMessage;
+            return;
+        }
+
+        var draftPassword = NewServerPasswordInput;
+        using var cancellation = new CancellationTokenSource();
+        serverChangeCancellation = cancellation;
+        IsApplyingServerChange = true;
+        ServerChangeMessage = "Checking...";
+        try
+        {
+            var key = draftPassword.Length == 0
+                ? null
+                : await Task.Run(
+                    () => ServerPasswordKey.Derive(draftPassword),
+                    cancellation.Token);
+            var result = await serverConnectionTester.TestAccessAsync(
+                requestedServerAddress,
+                key,
+                cancellation.Token);
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!result.IsSuccessful)
+            {
+                ServerChangeMessage = result.Message;
+                return;
+            }
+
+            if (!TryApproveServerAddressChange(requestedServerAddress))
+            {
+                ServerChangeMessage = string.Empty;
+                return;
+            }
+
+            await CommitServerChangeAsync(requestedServerAddress, key);
+        }
+        catch (OperationCanceledException)
+        {
+            // The pane was cancelled or closed while the relay was being checked.
+        }
+        catch (Exception exception)
+        {
+            ServerChangeMessage = $"The server could not be changed: {exception.Message}";
+        }
+        finally
+        {
+            serverChangeCancellation = null;
+            IsApplyingServerChange = false;
+        }
+    }
+
+    /// <summary>
+    /// Saves a server change the relay has already accepted. A new address needs both relay
+    /// connections rebuilt, which the window does by replacing itself; the same address with a
+    /// new password only needs the live connections to present the new key.
+    /// </summary>
+    private async Task CommitServerChangeAsync(string serverAddress, string? key)
+    {
+        var previousKey = clientSettings!.Server.PasswordKey;
+        var addressChanged = !string.Equals(
+            clientSettings.Server.BaseUrl,
+            serverAddress,
+            StringComparison.Ordinal);
+        try
+        {
+            if (key is null)
+            {
+                serverPasswordStore?.Clear();
+            }
+            else
+            {
+                serverPasswordStore?.Save(key);
+            }
+
+            clientSettings.Server.PasswordKey = key;
+            PersistSettings(serverAddress);
+        }
+        catch (Exception exception)
+        {
+            RestoreServerPasswordKey(previousKey);
+            ServerChangeMessage = $"The server could not be saved: {exception.Message}";
+            SetStatus($"Settings could not be saved: {exception.Message}", true);
+            return;
+        }
+
+        HasServerPassword = key is not null;
+        ResetServerChangeDraft();
+        IsChangingServer = false;
+        ServerConnectionTestMessage = string.Empty;
+        ServerVersionLabel = string.Empty;
+        IsServerAddressVerified = false;
+        if (addressChanged)
+        {
+            IsSettingsOpen = false;
+            SetStatus("Server changed.", false);
+            RelayReinitializationRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         await ApplyServerPasswordKeyAsync(key);
+        SetStatus("Server password changed.", false);
     }
 
-    private void BeginServerPasswordChange()
+    private void RestoreServerPasswordKey(string? previousKey)
     {
-        ServerPasswordInput = string.Empty;
-        IsChangingServerPassword = true;
-    }
-
-    private void CancelServerPasswordChange()
-    {
-        ServerPasswordInput = string.Empty;
-        IsChangingServerPassword = false;
-    }
-
-    public async Task ClearServerPasswordAsync()
-    {
-        ServerPasswordInput = string.Empty;
-        IsChangingServerPassword = false;
-        serverPasswordStore?.Clear();
-        HasServerPassword = false;
-        await ApplyServerPasswordKeyAsync(null);
+        clientSettings!.Server.PasswordKey = previousKey;
+        try
+        {
+            if (previousKey is null)
+            {
+                serverPasswordStore?.Clear();
+            }
+            else
+            {
+                serverPasswordStore?.Save(previousKey);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The saved key could not be put back either; the next start reads whatever the
+            // store holds, and the warning on the settings page says if it is not accepted.
+        }
     }
 
     /// <summary>
@@ -2031,15 +2098,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private void RaiseServerPasswordProperties()
     {
-        RaisePropertyChanged(nameof(ShowServerPasswordEditor));
-        RaisePropertyChanged(nameof(ShowServerPasswordSetState));
         RaisePropertyChanged(nameof(ShowServerPasswordWarning));
         RaisePropertyChanged(nameof(ServerPasswordWarning));
         RaisePropertyChanged(nameof(IsRelayUnprotected));
         RaisePropertyChanged(nameof(IsServerPasswordRejected));
         RaisePropertyChanged(nameof(EmptyClientListMessage));
-        changeServerPasswordCommand.RaiseCanExecuteChanged();
-        (ClearServerPasswordCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
     }
 
     private void RaiseAvailabilityProperties()

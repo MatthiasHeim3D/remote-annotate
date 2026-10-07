@@ -205,20 +205,20 @@ public partial class MainWindow : Window
         }
 
         if (ReferenceEquals(sender, viewModel)
-            && e.PropertyName == nameof(MainWindowViewModel.ServerPasswordInput)
-            && viewModel.ServerPasswordInput.Length == 0
-            && ServerPasswordBox.Password.Length > 0)
+            && e.PropertyName == nameof(MainWindowViewModel.NewServerPasswordInput)
+            && viewModel.NewServerPasswordInput.Length == 0
+            && NewServerPasswordBox.Password.Length > 0)
         {
-            ServerPasswordBox.Clear();
+            NewServerPasswordBox.Clear();
         }
 
         if (ReferenceEquals(sender, viewModel)
-            && e.PropertyName == nameof(MainWindowViewModel.IsChangingServerPassword)
-            && viewModel.IsChangingServerPassword)
+            && e.PropertyName == nameof(MainWindowViewModel.ShowServerChangePane)
+            && viewModel.ShowServerChangePane)
         {
-            // The same property change reveals the box, so focus has to wait for that layout pass.
+            // The same property change reveals the pane, so focus has to wait for that layout pass.
             _ = Dispatcher.BeginInvoke(
-                () => ServerPasswordBox.Focus(),
+                () => NewServerAddressBox.Focus(),
                 DispatcherPriority.Input);
         }
 
@@ -455,13 +455,13 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// PasswordBox deliberately does not expose its value as a bindable property, so the draft
-    /// is pushed to the view model here. It is cleared as soon as settings are saved.
+    /// is pushed to the view model here. It is cleared as soon as the change is applied or cancelled.
     /// </summary>
-    private void OnServerPasswordChanged(object sender, RoutedEventArgs e)
+    private void OnNewServerPasswordChanged(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
-        viewModel.ServerPasswordInput = ServerPasswordBox.Password;
+        viewModel.NewServerPasswordInput = NewServerPasswordBox.Password;
     }
 
     private void OnOpenRepository(object sender, RoutedEventArgs e)

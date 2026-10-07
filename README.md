@@ -26,7 +26,7 @@ Every annotator must be **individually approved** by the host, and the host can 
 
 ## Using it
 
-1. On every PC, enter the relay's **server password** in Settings. It is what gets the client onto the relay at all — without it, nothing connects.
+1. On every PC, set the relay's address and its **server password** together: in Settings, under Connection, choose **Change**, enter both, and Apply. The password is what gets the client onto the relay at all — without it, nothing connects — and nothing is saved until the relay has accepted both.
 2. Put every PC in the same **room** in Settings. Clients see each other when they are in the same room, and the name is shown back in Settings so you can check it at a glance. Fresh installs all start in `Public`.
 3. On the host PC, choose **Available** to become discoverable.
 4. On each annotator PC, pick that host from the list and request access.
@@ -64,7 +64,7 @@ When several people annotate one screen at once, the server keeps them apart for
 
 ## Installing
 
-Remote Annotate is distributed as a Windows installer. It defaults to installing just for you, which needs no administrator rights; on a shared PC you can instead choose "Install for all users" on setup's first page, which asks for admin. Your settings stay yours either way — every Windows account gets its own relay address, server password, and profile. There is no public download — whoever runs your relay builds and shares the installer. On first launch, the client asks for your relay's HTTPS address; add the relay's server password in the same screen.
+Remote Annotate is distributed as a Windows installer. It defaults to installing just for you, which needs no administrator rights; on a shared PC you can instead choose "Install for all users" on setup's first page, which asks for admin. Your settings stay yours either way — every Windows account gets its own relay address, server password, and profile. There is no public download — whoever runs your relay builds and shares the installer. On first launch, the client asks for your relay's HTTPS address; the same screen takes the relay's server password.
 
 - Set up the relay server → [Server deployment](docs/server-deployment.md)
 - Build and install the client → [Client deployment](docs/deployment.md)
