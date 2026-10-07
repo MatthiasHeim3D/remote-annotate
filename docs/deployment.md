@@ -39,7 +39,7 @@ No MSI, WiX, signing certificate, machine configuration, service, driver, or inb
 Normal branch pushes do not publish anything. To release, open **Actions → Release → Run workflow** on GitHub, leave the commit empty to release the tip of `main` or paste the SHA of an earlier commit on `main`, and run it. The workflow uses `nbgv tag` to calculate that commit's version tag (for example, `v1.0.14`), refuses a commit that is not on `main` or a tag that already exists, pushes the tag, and then builds both outputs for it:
 
 - **Relay image:** the **Publish relay image** workflow verifies the tag against Nerdbank.GitVersioning and publishes the versioned relay image and `latest` to GitHub Container Registry.
-- **Client release:** the **Publish client release** workflow runs on a GitHub-hosted Windows runner. It builds and smoke-tests the installer (and the portable zip, once `build/Build-Portable.ps1` exists on `main`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page.
+- **Client release:** the **Publish client release** workflow runs on a GitHub-hosted Windows runner. It builds and smoke-tests the installer and the portable zip (`build/Build-Portable.ps1`, `build/Test-Portable.ps1`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page.
 
 To embed a private-CA relay root in the installer, store the base64 of the public `.crt` in the repository secret `RELAY_ROOT_CERTIFICATE`; leave it unset for a publicly trusted relay. The build is unsigned, like a local one. Pushing a `v*` tag by hand (`dotnet nbgv tag HEAD`, then `git push origin <tag>`) still starts both workflows directly.
 
@@ -71,6 +71,39 @@ Uninstall from Windows Settings, or run the uninstaller from wherever the instal
 ```
 
 An interactive uninstall asks whether to also delete `%LocalAppData%\RemoteAnnotate` (saved settings, profile picture cache, audit and protected recovery data); answering No, or uninstalling silently (`/SUPPRESSMSGBOXES`), leaves it in place so another installed version keeps working. Because that data and the `HKCU` startup registration are per-account, uninstalling an all-users install only clears them for the account running the uninstaller; other accounts keep their own copies, and their startup entries simply stop resolving. The uninstaller never removes the trusted relay root from either certificate store — remove that manually, and only after no internal service depends on it.
+
+## Portable (no-installer) build
+
+The release workflow above builds this zip and attaches it, with its `.sha256`, to the draft release. For locked-down PCs, one-off support sessions, or running from a USB stick or network share, you can also build a zip of the same self-contained publish locally instead of using the installer. It needs no setup, no administrator rights, and no .NET install on the target PC:
+
+```powershell
+.\build\Build-Portable.ps1
+```
+
+```text
+artifacts\portable\RemoteAnnotate.Client-<version>-x64-Portable.zip
+artifacts\portable\RemoteAnnotate.Client-<version>-x64-Portable.zip.sha256
+```
+
+The zip holds one `RemoteAnnotate` folder. Extract it anywhere writable (not into a protected folder you cannot launch from) and run `RemoteAnnotate.Client.exe`. A single-file exe is not offered: WPF with WinForms interop still ships native libraries beside the exe, so a folder in a zip is the supported form. Only the .NET 10 SDK is needed to build it; Inno Setup is not.
+
+How the installer's extras map to the portable case:
+
+- **Relay address:** not built in, same as the installer. Users enter it and the server password on first launch. To save them typing, put a copy of `appsettings.json` with `Server:BaseUrl` set into the extracted folder before handing it out; the client reads `appsettings.json` next to the exe. Never put the server password in it.
+- **Relay root certificate:** the portable build does not trust a private CA. For a relay on a publicly trusted CA nothing is needed. For a Caddy private-CA relay, a user (or admin) must first import `root.crt` themselves, for example `certutil -user -addstore Root relay-root.crt`, which shows a Windows confirmation prompt. The client still refuses non-HTTPS relay URLs and uses normal Windows certificate validation.
+- **Data location:** unchanged. Settings, DPAPI-protected credentials, calibrations, and audit logs stay in `%LocalAppData%\RemoteAnnotate` on each PC, never next to the exe. Credentials are bound to the Windows account and would not travel between PCs anyway.
+- **Launch at startup:** still available. It registers the exe's current path under `HKCU`, so if you move or delete the folder the entry dangles; turn the option off before removing the app.
+- **Single instance:** the portable and installed builds use the same single-instance guard, so starting one while the other runs just activates the running copy.
+- **Update:** extract the new zip over the old folder, or into a new one.
+- **Remove:** turn off "Launch at startup", delete the folder, and optionally delete `%LocalAppData%\RemoteAnnotate`. A relay root you imported by hand stays until you remove it from the certificate store.
+- **SmartScreen and Mark of the Web:** the exe is unsigned, like the installer. A zip downloaded through a browser marks the extracted files as from the internet and may show a SmartScreen warning. Verify the SHA-256 file, then right-click the zip, choose Properties, and tick **Unblock** before extracting (or run `Unblock-File` on it). Distribute it over the same restricted internal channel as the installer.
+
+Smoke test, which verifies the hash, extracts, checks for an empty relay URL, and launches the client for ten seconds:
+
+```powershell
+.\build\Test-Portable.ps1 `
+  -ArchivePath .\artifacts\portable\RemoteAnnotate.Client-1.0.0-x64-Portable.zip
+```
 
 ## Installer smoke test
 

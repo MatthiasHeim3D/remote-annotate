@@ -86,11 +86,6 @@ jobs:
       - name: Build and smoke-test the portable zip
         shell: pwsh
         run: |
-          # Skipped until build/Build-Portable.ps1 exists on main.
-          if (-not (Test-Path build/Build-Portable.ps1)) {
-            Write-Warning 'build/Build-Portable.ps1 not found; no portable zip in this release.'
-            return
-          }
           ./build/Build-Portable.ps1
           $zip = Get-ChildItem artifacts/portable -Filter '*-Portable.zip' | Select-Object -First 1
           ./build/Test-Portable.ps1 -ArchivePath $zip.FullName
