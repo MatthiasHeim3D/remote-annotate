@@ -118,7 +118,19 @@ public partial class TargetRegionWindow : Window
 
     public bool ExpandUsageHintsInitially { get; }
 
-    public double DrawingOpacity { get; }
+    public double DrawingOpacity { get; private set; }
+
+    /// <summary>
+    /// Applies a new drawing opacity to an open window, so a value changed in Settings reaches
+    /// the shapes already on the canvas and everything drawn afterwards without recalibrating.
+    /// </summary>
+    public void SetDrawingOpacity(double drawingOpacity)
+    {
+        DrawingOpacity = double.IsFinite(drawingOpacity)
+            ? Math.Clamp(drawingOpacity, 0d, 1d)
+            : 1d;
+        RippleCanvas.Opacity = DrawingOpacity;
+    }
 
     /// <summary>
     /// The colour this annotator draws in. It reaches the drawings only — shapes, freehand ink,
