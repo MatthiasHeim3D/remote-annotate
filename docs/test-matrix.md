@@ -119,3 +119,12 @@
 5a. For an all-users install, confirm setup prompts for elevation, lands in `%ProgramFiles%\Remote Annotate`, trusts the root in `Cert:\LocalMachine\Root`, and that a second standard account gets its own first-run setup with an empty relay address.
 6. Establish a real host/annotator session from two machines, including one over VPN, and repeat join approval, calibration, annotating, termination, and reconnect tests.
 7. Confirm the clients require only outbound TCP 443 and relay port 8080 is not published by Docker.
+
+## Portable build checks
+
+1. Run `build\Build-Portable.ps1`; confirm the zip and its `.sha256` file are produced and the installer path is unaffected.
+2. Run `build\Test-Portable.ps1` against the zip as a non-administrator.
+3. On a clean Windows 11 machine without .NET installed, extract the zip and start `RemoteAnnotate.Client.exe`. Confirm Settings asks for the relay address, then connect with the server password. With a private-CA relay, confirm the connection fails until the root is imported manually, then succeeds.
+4. Confirm a downloaded (Mark of the Web) zip shows the SmartScreen prompt, and that unblocking it before extraction removes the prompt.
+5. Run an installed copy and a portable copy together; confirm the second launch activates the first instead of opening another window.
+6. Enable "Launch at startup" from the portable copy and confirm it registers the exe's path under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
