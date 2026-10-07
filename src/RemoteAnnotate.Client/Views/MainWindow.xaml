@@ -1448,6 +1448,11 @@
                         <TextBlock Style="{StaticResource ValidationMessageStyle}"
                                    Text="{Binding ServerPasswordValidationMessage}" />
                     </StackPanel>
+                    <TextBlock Margin="0,8,0,0"
+                               FontSize="11"
+                               Foreground="#AFAFAF"
+                               Text="{Binding ServerPasswordCheckMessage}"
+                               Visibility="{Binding IsCheckingServerPassword, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <Border Margin="0,10,0,0"
                             Padding="10,8"
                             Background="#3A3222"
