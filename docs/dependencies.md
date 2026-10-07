@@ -45,3 +45,7 @@ Central version declarations live in `Directory.Packages.props`. Framework and p
 ## Audit result
 
 The Phase 6 Release build runs .NET analyzers at the latest installed analysis level with warnings treated as errors. On 2026-07-23, `dotnet list package --vulnerable --include-transitive` reported no known vulnerable packages in any production or test project from the configured NuGet sources. Any future advisory blocks release until triaged and documented.
+
+## External services
+
+The client contacts `api.github.com` once per launch for the update check described in [security.md](security.md). It uses the built-in `HttpClient`, so there is no added package. The only other endpoint the client talks to is the relay the user configured.

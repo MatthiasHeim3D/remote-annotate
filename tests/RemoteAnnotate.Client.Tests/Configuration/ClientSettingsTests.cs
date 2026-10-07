@@ -95,6 +95,23 @@ public sealed class ClientSettingsTests
     }
 
     [Fact]
+    public void UpdateCheck_IsOnByDefaultAndTheChoiceIsPersisted()
+    {
+        using var directory = new TemporaryDirectory();
+        WriteSettings(directory.Path, "https://packaged.example.test");
+        var settings = ClientSettings.Load(directory.Path, null);
+        Assert.True(settings.Updates.CheckForUpdates);
+
+        settings.SaveUserPreferences(
+            "https://packaged.example.test",
+            "Name",
+            null,
+            checkForUpdates: false);
+
+        Assert.False(ClientSettings.Load(directory.Path, null).Updates.CheckForUpdates);
+    }
+
+    [Fact]
     public void UserPreferences_RoundTripServerAndProfile()
     {
         using var directory = new TemporaryDirectory();
