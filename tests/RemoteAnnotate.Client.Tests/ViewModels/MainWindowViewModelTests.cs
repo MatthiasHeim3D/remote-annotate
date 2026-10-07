@@ -128,6 +128,51 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task ChangePane_ANewPasswordHidesTheOldErrorAndShowsCheckingUntilTheRelayAnswers()
+    {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        testSettings.Settings.Server.PasswordKey = "wrong-key";
+        using var overlay = new FakeOverlayService();
+        var relay = new FakeRelayClient { RejectsServerPassword = true };
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            hostRelayClient: relay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: new FakeServerPasswordStore());
+        relay.RaiseConnectionStatus(
+            RelayConnectionStatus.Unauthorized,
+            "The server password is not correct.");
+        Assert.True(viewModel.ShowServerPasswordWarning);
+
+        relay.RejectsServerPassword = false;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        relay.CapabilitiesGate = gate;
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "relay.example.test";
+        viewModel.NewServerPasswordInput = "the right password";
+        var apply = viewModel.ApplyServerChangeAsync();
+        while (relay.RelayCapabilitiesRequestCount == 0)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(viewModel.IsCheckingServerPassword);
+        Assert.False(viewModel.ShowServerPasswordWarning);
+        Assert.False(viewModel.IsServerPasswordRejected);
+
+        relay.RaiseConnectionStatus(RelayConnectionStatus.Connected, "Connected to relay.");
+        gate.SetResult();
+        await apply;
+
+        Assert.False(viewModel.IsCheckingServerPassword);
+        Assert.False(viewModel.IsServerPasswordRejected);
+    }
+
+    [Fact]
     public void SettingsPage_ShowsTheSavedAddressAndOpensTheChangePaneUntilCancelled()
     {
         using var testSettings = new TemporaryClientSettings("https://relay.example.test");

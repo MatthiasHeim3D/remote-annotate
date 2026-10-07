@@ -91,24 +91,39 @@ internal sealed class FakeRelayClient : IRelayClient
     /// </summary>
     public bool RejectsServerPassword { get; set; }
 
-    public Task<RelayCapabilities> GetRelayCapabilitiesAsync(
+    /// <summary>
+    /// When set, the relay's answer is held back until the gate is released, so a test can look
+    /// at the client while it is still waiting for the relay.
+    /// </summary>
+    public TaskCompletionSource? CapabilitiesGate { get; set; }
+
+    public async Task<RelayCapabilities> GetRelayCapabilitiesAsync(
         CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
         RelayCapabilitiesRequestCount++;
+        if (CapabilitiesGate is not null)
+        {
+            await CapabilitiesGate.Task;
+        }
+
+        return RespondToCapabilitiesRequest();
+    }
+
+    private RelayCapabilities RespondToCapabilitiesRequest()
+    {
         if (RejectsServerPassword)
         {
             RaiseConnectionStatus(
                 RelayConnectionStatus.Unauthorized,
                 "The server password is not correct.");
-            return Task.FromException<RelayCapabilities>(
-                new HttpRequestException(
-                    "Response status code does not indicate success: 401 (Unauthorized).",
-                    inner: null,
-                    HttpStatusCode.Unauthorized));
+            throw new HttpRequestException(
+                "Response status code does not indicate success: 401 (Unauthorized).",
+                inner: null,
+                HttpStatusCode.Unauthorized);
         }
 
-        return Task.FromResult(Capabilities);
+        return Capabilities;
     }
 
     public string? ServerPasswordKey { get; private set; }
