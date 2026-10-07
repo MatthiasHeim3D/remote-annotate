@@ -50,9 +50,14 @@ public sealed class TargetRegionService : ITargetRegionService
         this.hasShownUsageHints = hasShownUsageHints;
     }
 
-    public void SetDrawingOpacityPercent(int drawingOpacityPercent) =>
+    public void SetDrawingOpacityPercent(int drawingOpacityPercent)
+    {
         this.drawingOpacityPercent =
             PointerSettings.ClampDrawingOpacityPercent(drawingOpacityPercent);
+        // Pushed into an open window as well: the window only read the value when it was
+        // created, so without this a saved change would wait for the next calibration.
+        window?.SetDrawingOpacity(DrawingOpacity);
+    }
 
     public void SetAnnotationColor(string? annotationColor)
     {
