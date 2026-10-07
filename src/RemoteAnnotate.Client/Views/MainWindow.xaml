@@ -1378,19 +1378,13 @@
                         <Button Style="{StaticResource IconButtonStyle}"
                                 Command="{Binding TestServerConnectionCommand}"
                                 ToolTip="Test the connection to this relay">
-                            <ContentControl Style="{StaticResource FluentIcon}" Content="{StaticResource Icon.ArrowSync}" />
+                            <ContentControl Style="{StaticResource FluentIcon}" Content="{Binding ServerConnectionTestIcon, Converter={StaticResource IconKeyConverter}}" />
                         </Button>
                         <StackPanel Margin="8,0,0,0"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal"
                                     Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <ContentControl
-                                       FontSize="14"
-                                       Foreground="#6CCB7F"
-                                           Style="{StaticResource FluentIcon}"
-                                           Content="{StaticResource Icon.Checkmark}" />
-                            <TextBlock Margin="7,0,0,0"
-                                       VerticalAlignment="Center"
+                            <TextBlock VerticalAlignment="Center"
                                        FontSize="11"
                                        Foreground="#8C8C8C"
                                        TextTrimming="CharacterEllipsis"
