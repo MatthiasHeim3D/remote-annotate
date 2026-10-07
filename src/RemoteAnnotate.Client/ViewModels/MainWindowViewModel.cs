@@ -1541,7 +1541,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 clientSettings.Server.BaseUrl,
                 requestedServerAddress,
                 StringComparison.Ordinal);
+            var previousServerAddress = clientSettings.Server.BaseUrl;
             PersistSettings(requestedServerAddress);
+            if (addressIsNew && !string.IsNullOrWhiteSpace(previousServerAddress))
+            {
+                await ForgetServerPasswordOfPreviousServerAsync();
+            }
+
             pendingRelayReinitialization = !string.Equals(
                 activeServerAddress,
                 requestedServerAddress,
@@ -1942,6 +1948,42 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         HasServerPassword = true;
         IsChangingServerPassword = false;
         await ApplyServerPasswordKeyAsync(key);
+    }
+
+    /// <summary>
+    /// A server password belongs to the relay it was entered for, so it is dropped as soon as
+    /// the address moves to another one, not when the settings are next opened.
+    /// </summary>
+    private async Task ForgetServerPasswordOfPreviousServerAsync()
+    {
+        ServerPasswordInput = string.Empty;
+        IsChangingServerPassword = false;
+        serverPasswordStore?.Clear();
+        if (clientSettings is not null)
+        {
+            clientSettings.Server.PasswordKey = null;
+        }
+
+        HasServerPassword = false;
+        // What was learned about the old relay does not describe the new one.
+        hasRelayCapabilities = false;
+        ServerPasswordRequired = false;
+        RaiseServerPasswordProperties();
+        try
+        {
+            if (hostRelayClient is not null)
+            {
+                await hostRelayClient.SetServerPasswordKeyAsync(null);
+            }
+
+            await Annotator.SetServerPasswordKeyAsync(null);
+        }
+        catch (Exception exception)
+        {
+            SetStatus(
+                $"The previous server password was removed, but the relay could not be updated: {exception.Message}",
+                true);
+        }
     }
 
     private void BeginServerPasswordChange()
