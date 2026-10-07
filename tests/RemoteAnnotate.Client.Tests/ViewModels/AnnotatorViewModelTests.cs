@@ -603,6 +603,20 @@ public sealed class AnnotatorViewModelTests
         Assert.Equal(AnnotationColors.Default, sent.Color);
     }
 
+    [Theory]
+    [InlineData(TargetRegionState.Ready, "Pen")]
+    [InlineData(TargetRegionState.Calibrating, "PenSync")]
+    [InlineData(TargetRegionState.Annotating, "PenDismiss")]
+    public void AnnotatingActionIcon_FollowsState(TargetRegionState state, string expectedIcon)
+    {
+        using var service = new FakeTargetRegionService();
+        using var viewModel = new AnnotatorViewModel(service);
+
+        service.RaiseState(state, "state");
+
+        Assert.Equal(expectedIcon, viewModel.AnnotatingActionIcon);
+    }
+
     [Fact]
     public void StateChanges_UpdateAnnotatingAndStatusProperties()
     {
@@ -613,6 +627,7 @@ public sealed class AnnotatorViewModelTests
 
         Assert.True(viewModel.IsAnnotating);
         Assert.Equal("Stop annotating", viewModel.AnnotatingActionLabel);
+        Assert.Equal("PenDismiss", viewModel.AnnotatingActionIcon);
         Assert.Equal("Annotating", viewModel.StateLabel);
         Assert.Equal("Annotating active", viewModel.StatusMessage);
         Assert.False(viewModel.IsError);
