@@ -1348,6 +1348,11 @@
                               Style="{StaticResource ToggleSwitchStyle}"
                               IsChecked="{Binding IsLaunchAtStartup}"
                               Content="Launch at startup" />
+                    <CheckBox Margin="0,0,0,8"
+                              Style="{StaticResource ToggleSwitchStyle}"
+                              IsChecked="{Binding CheckForUpdates}"
+                              ToolTip="Asks api.github.com for the latest release when the app starts. Nothing is downloaded or installed."
+                              Content="Check for updates on startup" />
 
                     <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}"
                                Text="Relay" />
@@ -1475,7 +1480,8 @@
                             BorderBrush="#303030"
                             BorderThickness="0,1,0,0">
                         <StackPanel HorizontalAlignment="Center"
-                                    Orientation="Horizontal"
+                                    Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal"
                                     Opacity="0.55">
                             <TextBlock VerticalAlignment="Center"
                                        FontSize="10"
@@ -1492,6 +1498,17 @@
                                 <Button.Style>
                                     <Style TargetType="Button">
                                         <Setter Property="Opacity" Value="0.75" />
+                                        <!-- No button chrome, so hovering only brightens the icon. -->
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Padding="{TemplateBinding Padding}"
+                                                            Background="Transparent">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                         <Style.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter Property="Opacity" Value="1" />
@@ -1503,6 +1520,30 @@
                                     <Path Fill="#D0D0D0"
                                           Data="{StaticResource Icon.GitHub}" />
                                 </Viewbox>
+                            </Button>
+                        </StackPanel>
+                            <!-- A plain text link: the template drops the default button chrome so
+                                 hovering only underlines instead of painting a background. -->
+                            <Button Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Cursor="Hand"
+                                    ToolTip="Open the release page on GitHub"
+                                    Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Click="OnOpenUpdate">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <TextBlock x:Name="LinkText"
+                                                   Background="Transparent"
+                                                   FontSize="10"
+                                                   Foreground="#8AB4F8"
+                                                   Text="{Binding UpdateAvailableText}" />
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="LinkText" Property="TextDecorations" Value="Underline" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
                             </Button>
                         </StackPanel>
                     </Border>
@@ -1648,7 +1689,18 @@
                             Style="{StaticResource IconButtonStyle}"
                             Command="{Binding ToggleSettingsCommand}"
                             ToolTip="Settings">
-                        <ContentControl Style="{StaticResource FluentIcon}" Content="{StaticResource Icon.Settings}" />
+                        <Grid>
+                            <ContentControl Style="{StaticResource FluentIcon}" Content="{StaticResource Icon.Settings}" />
+                            <!-- Update badge: an overlay in the button's corner, independent of the icon. -->
+                            <Ellipse Width="8"
+                                     Height="8"
+                                     Margin="0,-3,-4,0"
+                                     HorizontalAlignment="Right"
+                                     VerticalAlignment="Top"
+                                     Fill="#8AB4F8"
+                                     IsHitTestVisible="False"
+                                     Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </Grid>
                     </Button>
                 </Grid>
             </Border>

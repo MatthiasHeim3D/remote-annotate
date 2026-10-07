@@ -1,0 +1,112 @@
+name: Publish client release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing version tag to build (set by the Release workflow)
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore Nerdbank.GitVersioning
+        run: dotnet tool restore
+
+      - name: Verify the release tag
+        shell: bash
+        run: |
+          expected_tag="$(dotnet nbgv tag HEAD --what-if)"
+          if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "Tag '$RELEASE_TAG' does not match the Nerdbank.GitVersioning tag '$expected_tag'." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
+            echo "Tagged commit '$(git rev-parse HEAD)' is not on the main branch." >&2
+            exit 1
+          fi
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Write the relay root certificate
+        id: certificate
+        shell: pwsh
+        env:
+          RELAY_ROOT_CERTIFICATE: ${{ secrets.RELAY_ROOT_CERTIFICATE }}
+        run: |
+          # Optional: base64 of the public relay root CA (.crt). Leave the secret unset for
+          # relays on a publicly trusted CA; the installer then has no certificate task.
+          if ([string]::IsNullOrWhiteSpace($env:RELAY_ROOT_CERTIFICATE)) {
+            "path=" | Add-Content -Path $env:GITHUB_OUTPUT
+            return
+          }
+          $path = Join-Path $env:RUNNER_TEMP 'relay-root.crt'
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:RELAY_ROOT_CERTIFICATE))
+          "path=$path" | Add-Content -Path $env:GITHUB_OUTPUT
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $arguments = @{}
+          if ('${{ steps.certificate.outputs.path }}') {
+            $arguments.RelayRootCertificatePath = '${{ steps.certificate.outputs.path }}'
+          }
+          ./build/Build-Installer.ps1 @arguments
+
+      - name: Smoke-test the installer
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem artifacts/installer -Filter '*-Setup.exe' | Select-Object -First 1
+          ./build/Test-Installer.ps1 -SetupPath $setup.FullName -SkipCertificateTrust
+
+      - name: Build and smoke-test the portable zip
+        shell: pwsh
+        run: |
+          # Skipped until build/Build-Portable.ps1 exists on main.
+          if (-not (Test-Path build/Build-Portable.ps1)) {
+            Write-Warning 'build/Build-Portable.ps1 not found; no portable zip in this release.'
+            return
+          }
+          ./build/Build-Portable.ps1
+          $zip = Get-ChildItem artifacts/portable -Filter '*-Portable.zip' | Select-Object -First 1
+          ./build/Test-Portable.ps1 -ArchivePath $zip.FullName
+
+      - name: Create the draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @(Get-ChildItem artifacts/installer, artifacts/portable -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match '-Setup\.exe(\.sha256)?$|-Portable\.zip(\.sha256)?$' } |
+              ForEach-Object FullName)
+          if ($files.Count -eq 0) { throw 'No release assets were produced.' }
+          # Draft: review the notes and assets, then publish it from the Releases page.
+          gh release create $env:RELEASE_TAG @files `
+            --title "Remote Annotate Client $($env:RELEASE_TAG)" `
+            --generate-notes `
+            --draft `
+            --verify-tag

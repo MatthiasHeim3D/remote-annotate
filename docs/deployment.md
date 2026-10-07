@@ -34,21 +34,14 @@ artifacts\installer\RemoteAnnotate.Client-<version>-x64-Setup.exe.sha256
 
 No MSI, WiX, signing certificate, machine configuration, service, driver, or inbound firewall rule is involved. Because the installer is intentionally unsigned, distribute it and its SHA-256 file from a restricted internal share or another authenticated internal channel.
 
-## Publish a relay image
+## Publish a release
 
-Normal branch pushes do not run the relay-image workflow. To publish a release, start from a clean `main` branch whose current commit is already the tip of `origin/main`, then run:
+Normal branch pushes do not publish anything. To release, open **Actions → Release → Run workflow** on GitHub, leave the commit empty to release the tip of `main` or paste the SHA of an earlier commit on `main`, and run it. The workflow uses `nbgv tag` to calculate that commit's version tag (for example, `v1.0.14`), refuses a commit that is not on `main` or a tag that already exists, pushes the tag, and then builds both outputs for it:
 
-```powershell
-.\build\Publish-Release.ps1
-```
+- **Relay image:** the **Publish relay image** workflow verifies the tag against Nerdbank.GitVersioning and publishes the versioned relay image and `latest` to GitHub Container Registry.
+- **Client release:** the **Publish client release** workflow runs on a GitHub-hosted Windows runner. It builds and smoke-tests the installer (and the portable zip, once `build/Build-Portable.ps1` exists on `main`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page.
 
-The script restores the repository-pinned Nerdbank.GitVersioning tool, uses `nbgv tag` to calculate and create the current commit's version tag (for example, `v1.0.14`), and pushes only that tag. The tag push starts the GitHub Actions workflow, which verifies the tag against NB.GV before publishing the versioned relay image and `latest`.
-
-Preview the release without creating or pushing a tag with:
-
-```powershell
-.\build\Publish-Release.ps1 -WhatIf
-```
+To embed a private-CA relay root in the installer, store the base64 of the public `.crt` in the repository secret `RELAY_ROOT_CERTIFICATE`; leave it unset for a publicly trusted relay. The build is unsigned, like a local one. Pushing a `v*` tag by hand (`dotnet nbgv tag HEAD`, then `git push origin <tag>`) still starts both workflows directly.
 
 ## Install
 
