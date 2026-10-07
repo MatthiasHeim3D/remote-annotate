@@ -1350,40 +1350,31 @@
                     <TextBlock Margin="0,0,0,6" Text="Server address" />
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Border Padding="10,0"
-                                Background="#343434"
-                                BorderBrush="#555555"
-                                BorderThickness="1,1,0,1"
-                                CornerRadius="4,0,0,4">
-                            <TextBlock VerticalAlignment="Center"
-                                       Foreground="#D8D8D8"
-                                       Text="https://" />
-                        </Border>
-                        <Border Grid.Column="1"
-                                Height="36"
-                                Padding="10,0"
-                                Background="#2B2B2B"
-                                BorderBrush="#555555"
-                                BorderThickness="0,1,1,1"
-                                CornerRadius="0,4,4,0">
-                            <TextBlock VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding SavedServerAddressDisplay}"
-                                       ToolTip="{Binding SavedServerAddressDisplay}" />
-                        </Border>
-                        <Button Grid.Column="2"
+                        <TextBlock VerticalAlignment="Center"
+                                   FontSize="14"
+                                   Foreground="#E8E8E8"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="{Binding SavedServerAddressDisplay}"
+                                   ToolTip="{Binding SavedServerAddressDisplay}" />
+                        <Button Grid.Column="1"
                                 Width="72"
-                                Height="36"
+                                Height="32"
                                 Margin="8,0,0,0"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Command="{Binding TestServerConnectionCommand}"
-                                Content="Test"
-                                ToolTip="Test the connection to this server" />
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Command="{Binding ChangeServerCommand}"
+                                Content="Change"
+                                ToolTip="Set a new server address and password" />
                     </Grid>
+                    <StackPanel Margin="0,4,0,0"
+                                Orientation="Horizontal">
+                        <Button Style="{StaticResource LinkButtonStyle}"
+                                Command="{Binding TestServerConnectionCommand}"
+                                Content="Test connection"
+                                ToolTip="Test the connection to this server" />
+                    </StackPanel>
                     <StackPanel Margin="0,6,0,0"
                                 Orientation="Horizontal"
                                 Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1401,12 +1392,6 @@
                     </StackPanel>
                     <TextBlock Style="{StaticResource ValidationMessageStyle}"
                                Text="{Binding ServerConnectionTestMessage}" />
-                    <Button Margin="0,10,0,0"
-                            HorizontalAlignment="Left"
-                            Style="{StaticResource LinkButtonStyle}"
-                            Command="{Binding ChangeServerCommand}"
-                            Content="Change"
-                            ToolTip="Set a new server address and password" />
                     <Border Margin="0,10,0,0"
                             Padding="10,8"
                             Background="#3A3222"
