@@ -91,8 +91,8 @@ public sealed class ConnectedAnnotatorViewModel : ObservableObject
 
     public string StatusColor => IsPaused ? "#FFB900" : "#6CCB7F";
 
-    // Segoe MDL2 Assets: Play to let a paused annotator draw again, Pause to stop one.
-    public string PauseActionIcon => IsPaused ? "" : "";
+    // Icon names (Resources/Icons.xaml): Play to let a paused annotator draw again, Pause to stop one.
+    public string PauseActionIcon => IsPaused ? "Play" : "Pause";
 
     public string PauseActionLabel => IsPaused
         ? $"Let {DisplayName} annotate again"

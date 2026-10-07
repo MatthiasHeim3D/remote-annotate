@@ -780,9 +780,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public string PauseAllActionLabel => AreAllAnnotatorsPaused ? "Resume all" : "Pause all";
 
-    // Same Segoe MDL2 glyphs the per-annotator pause button uses, so the bulk action reads as
+    // Same icon names the per-annotator pause button uses, so the bulk action reads as
     // the same control applied to every row.
-    public string PauseAllActionIcon => AreAllAnnotatorsPaused ? "" : "";
+    public string PauseAllActionIcon => AreAllAnnotatorsPaused ? "Play" : "Pause";
 
     public string FlyoutConnectionMessage => HasConnectedAnnotator
         ? ConnectedAnnotatorCountLabel

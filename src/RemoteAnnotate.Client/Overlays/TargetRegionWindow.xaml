@@ -169,11 +169,11 @@
                         VerticalAlignment="Center"
                         IsHitTestVisible="False"
                         Opacity="0.4">
-                    <TextBlock x:Name="MoveHandleIcon"
+                    <ContentControl x:Name="MoveHandleIcon"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
-                               FontFamily="Segoe MDL2 Assets"
-                               Text="&#xE7C2;" />
+                                   Style="{StaticResource FluentIcon}"
+                                   Content="{StaticResource Icon.ArrowMove}" />
                 </Border>
 
                 <StackPanel x:Name="CalibrationHeader"
@@ -198,11 +198,11 @@
                                 HorizontalAlignment="Center"
                                 Orientation="Horizontal"
                                 Visibility="Collapsed">
-                        <TextBlock VerticalAlignment="Center"
-                                   FontFamily="Segoe MDL2 Assets"
+                        <ContentControl VerticalAlignment="Center"
                                    FontSize="13"
                                    Foreground="#FFB900"
-                                   Text="&#xE7BA;" />
+                                       Style="{StaticResource FluentIcon}"
+                                       Content="{StaticResource Icon.Warning}" />
                         <TextBlock Margin="7,0,0,0"
                                    VerticalAlignment="Center"
                                    FontSize="11"
@@ -353,8 +353,14 @@
                         <TextBlock Grid.Row="6" Text="ESC" />
                         <TextBlock Grid.Row="6" Grid.Column="1" Text="to Exit" />
                     </Grid>
-                    <TextBlock Margin="0,6,0,0"
-                               Text="&#x1F6C8; Hide usage hints in settings" />
+                    <StackPanel Margin="0,6,0,0"
+                                Orientation="Horizontal">
+                        <ContentControl VerticalAlignment="Center"
+                                        Style="{StaticResource FluentIcon}"
+                                        Content="{StaticResource Icon.Info}" />
+                        <TextBlock Margin="6,0,0,0"
+                                   Text="Hide usage hints in settings" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -382,11 +388,11 @@
                 <StackPanel HorizontalAlignment="Center"
                             VerticalAlignment="Center"
                             Orientation="Vertical">
-                    <TextBlock HorizontalAlignment="Center"
-                               FontFamily="Segoe MDL2 Assets"
+                    <ContentControl HorizontalAlignment="Center"
                                FontSize="72"
                                Foreground="#F5F5F5"
-                               Text="&#xE769;" />
+                                   Style="{StaticResource FluentIcon}"
+                                   Content="{StaticResource Icon.Pause}" />
                     <TextBlock Margin="0,10,0,0"
                                HorizontalAlignment="Center"
                                FontSize="15"
