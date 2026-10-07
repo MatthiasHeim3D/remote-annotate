@@ -1479,9 +1479,9 @@
                             Padding="0,12,0,0"
                             BorderBrush="#303030"
                             BorderThickness="0,1,0,0">
-                        <StackPanel>
                         <StackPanel HorizontalAlignment="Center"
-                                    Orientation="Horizontal"
+                                    Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal"
                                     Opacity="0.55">
                             <TextBlock VerticalAlignment="Center"
                                        FontSize="10"
@@ -1498,6 +1498,17 @@
                                 <Button.Style>
                                     <Style TargetType="Button">
                                         <Setter Property="Opacity" Value="0.75" />
+                                        <!-- No button chrome, so hovering only brightens the icon. -->
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Padding="{TemplateBinding Padding}"
+                                                            Background="Transparent">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                         <Style.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter Property="Opacity" Value="1" />
@@ -1511,18 +1522,29 @@
                                 </Viewbox>
                             </Button>
                         </StackPanel>
-                            <Button Margin="0,6,0,0"
-                                    Padding="0"
-                                    HorizontalAlignment="Center"
-                                    Background="Transparent"
-                                    BorderThickness="0"
+                            <!-- A plain text link: the template drops the default button chrome so
+                                 hovering only underlines instead of painting a background. -->
+                            <Button Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
                                     Cursor="Hand"
-                                    Foreground="#8AB4F8"
-                                    FontSize="10"
                                     ToolTip="Open the release page on GitHub"
-                                    Content="{Binding UpdateAvailableText}"
                                     Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                    Click="OnOpenUpdate" />
+                                    Click="OnOpenUpdate">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <TextBlock x:Name="LinkText"
+                                                   Background="Transparent"
+                                                   FontSize="10"
+                                                   Foreground="#8AB4F8"
+                                                   Text="{Binding UpdateAvailableText}" />
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="LinkText" Property="TextDecorations" Value="Underline" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                         </StackPanel>
                     </Border>
                     </StackPanel>
@@ -1672,10 +1694,10 @@
                             <!-- Update badge: an overlay in the button's corner, independent of the icon. -->
                             <Ellipse Width="8"
                                      Height="8"
-                                     Margin="0,-6,-8,0"
+                                     Margin="0,-3,-4,0"
                                      HorizontalAlignment="Right"
                                      VerticalAlignment="Top"
-                                     Fill="#E5484D"
+                                     Fill="#8AB4F8"
                                      IsHitTestVisible="False"
                                      Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         </Grid>
