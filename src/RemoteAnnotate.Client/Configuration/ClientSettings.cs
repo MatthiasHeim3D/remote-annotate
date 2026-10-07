@@ -21,6 +21,8 @@ public sealed class ClientSettings
 
     public StartupSettings Startup { get; init; } = new();
 
+    public UpdateSettings Updates { get; init; } = new();
+
     public static ClientSettings Load(string? baseDirectory = null)
     {
         return Load(
@@ -81,7 +83,8 @@ public sealed class ClientSettings
         bool? hostAvailable = null,
         int? drawingOpacityPercent = null,
         string? annotationColor = null,
-        string? room = null)
+        string? room = null,
+        bool? checkForUpdates = null)
     {
         var normalizedServerAddress = NormalizeServerAddress(serverAddress);
         var normalizedUserName = userName.Trim();
@@ -126,6 +129,10 @@ public sealed class ClientSettings
         {
             Server.Room = NormalizeRoom(room);
         }
+        if (checkForUpdates.HasValue)
+        {
+            Updates.CheckForUpdates = checkForUpdates.Value;
+        }
         WriteUserPreferences();
     }
 
@@ -162,7 +169,8 @@ public sealed class ClientSettings
                 Pointer.HasShownUsageHints,
                 Pointer.DrawingOpacityPercent,
                 Pointer.AnnotationColor,
-                Server.Room),
+                Server.Room,
+                Updates.CheckForUpdates),
             new JsonSerializerOptions(JsonSerializerDefaults.Web)
             {
                 WriteIndented = true,
@@ -315,6 +323,7 @@ public sealed class ClientSettings
             preferences.DrawingOpacityPercent);
         Pointer.AnnotationColor = AnnotationColors.Normalize(preferences.AnnotationColor);
         Server.Room = NormalizeRoom(preferences.Room);
+        Updates.CheckForUpdates = preferences.CheckForUpdates;
     }
 
     /// <summary>
@@ -412,7 +421,8 @@ public sealed class ClientSettings
         bool HasShownUsageHints = false,
         int DrawingOpacityPercent = PointerSettings.DefaultDrawingOpacityPercent,
         string AnnotationColor = AnnotationColors.Default,
-        string Room = RoomName.DefaultDisplayName);
+        string Room = RoomName.DefaultDisplayName,
+        bool CheckForUpdates = true);
 }
 
 public sealed class ServerSettings
@@ -498,4 +508,13 @@ public sealed class HostSettings
 public sealed class StartupSettings
 {
     public bool LaunchAtStartup { get; set; }
+}
+
+public sealed class UpdateSettings
+{
+    /// <summary>
+    /// Whether the client asks GitHub for a newer release on startup. On by default; it is the
+    /// only call the client makes to anything other than the user's own relay.
+    /// </summary>
+    public bool CheckForUpdates { get; set; } = true;
 }

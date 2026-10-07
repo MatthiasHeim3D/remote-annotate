@@ -86,7 +86,8 @@ public partial class MainWindow : Window
             settings,
             new StartupRegistrationService(),
             serverConnectionTester: null,
-            serverPasswordStore: serverPasswordStore);
+            serverPasswordStore: serverPasswordStore,
+            updateChecker: new GitHubUpdateChecker());
         DataContext = viewModel;
 
         trayIcon = new SystemTrayIcon(ShowFromTray, ExitFromTray);
@@ -176,6 +177,7 @@ public partial class MainWindow : Window
         _ = sender;
         _ = e;
         PositionFlyout();
+        _ = viewModel.CheckForUpdatesAsync();
         await viewModel.RestoreSessionsAsync();
         await viewModel.InitializeAsync();
     }
@@ -470,6 +472,17 @@ public partial class MainWindow : Window
         _ = e;
         using var repositoryProcess = Process.Start(
             new ProcessStartInfo(RepositoryUrl) { UseShellExecute = true });
+    }
+
+    private void OnOpenUpdate(object sender, RoutedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (viewModel.UpdateReleaseUrl is { } releaseUrl)
+        {
+            using var updateProcess = Process.Start(
+                new ProcessStartInfo(releaseUrl.AbsoluteUri) { UseShellExecute = true });
+        }
     }
 
     private async void OnReceivingScreenSelectionChanged(

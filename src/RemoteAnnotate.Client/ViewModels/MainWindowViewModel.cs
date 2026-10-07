@@ -38,6 +38,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly ClientSettings? clientSettings;
     private readonly IStartupRegistrationService? startupRegistrationService;
     private readonly IServerConnectionTester serverConnectionTester;
+    private readonly IUpdateChecker? updateChecker;
+    private bool checkForUpdates;
+    private UpdateInfo? availableUpdate;
     private readonly IServerPasswordStore? serverPasswordStore;
     private readonly ITargetRegionService targetRegionService;
     private readonly RelayCommand decrementMaximumAnnotatorsCommand;
@@ -94,7 +97,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         ClientSettings? clientSettings = null,
         IStartupRegistrationService? startupRegistrationService = null,
         IServerConnectionTester? serverConnectionTester = null,
-        IServerPasswordStore? serverPasswordStore = null)
+        IServerPasswordStore? serverPasswordStore = null,
+        IUpdateChecker? updateChecker = null)
     {
         this.monitorService = monitorService ?? throw new ArgumentNullException(nameof(monitorService));
         this.overlayService = overlayService ?? throw new ArgumentNullException(nameof(overlayService));
@@ -103,6 +107,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         this.startupRegistrationService = startupRegistrationService;
         this.serverConnectionTester = serverConnectionTester ?? new ServerConnectionTester();
         this.serverPasswordStore = serverPasswordStore;
+        this.updateChecker = updateChecker;
+        checkForUpdates = clientSettings?.Updates.CheckForUpdates ?? true;
         hasServerPassword = !string.IsNullOrWhiteSpace(clientSettings?.Server.PasswordKey);
         roomInput = clientSettings?.Server.Room ?? RoomName.DefaultDisplayName;
         userName = clientSettings?.Profile.UserName ?? Environment.UserName;
@@ -241,6 +247,54 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public string ApplicationVersion { get; } =
         global::ThisAssembly.AssemblyInformationalVersion.Split('+', 2)[0];
+
+    public bool CheckForUpdates
+    {
+        get => checkForUpdates;
+        set
+        {
+            if (SetProperty(ref checkForUpdates, value))
+            {
+                RaisePropertyChanged(nameof(IsUpdateAvailable));
+            }
+        }
+    }
+
+    /// <summary>
+    /// True while a newer release is known and the user has not switched the check off. The
+    /// settings button dot and the notice next to the version both follow this.
+    /// </summary>
+    public bool IsUpdateAvailable => CheckForUpdates && availableUpdate is not null;
+
+    public string UpdateAvailableText =>
+        availableUpdate is null ? string.Empty : $"Update available: {availableUpdate.Version}";
+
+    public Uri? UpdateReleaseUrl => availableUpdate?.ReleaseUrl;
+
+    /// <summary>
+    /// Runs once per launch. It only learns whether a newer release exists; nothing is
+    /// downloaded, and any failure leaves the UI exactly as it was.
+    /// </summary>
+    public async Task CheckForUpdatesAsync(CancellationToken cancellationToken = default)
+    {
+        if (updateChecker is null || !CheckForUpdates)
+        {
+            return;
+        }
+
+        var update = await updateChecker
+            .CheckAsync(ApplicationVersion, cancellationToken)
+            .ConfigureAwait(true);
+        if (update is null)
+        {
+            return;
+        }
+
+        availableUpdate = update;
+        RaisePropertyChanged(nameof(IsUpdateAvailable));
+        RaisePropertyChanged(nameof(UpdateAvailableText));
+        RaisePropertyChanged(nameof(UpdateReleaseUrl));
+    }
 
     public MonitorDescriptor? SelectedMonitor
     {
@@ -1752,7 +1806,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             HostAvailability == HostAvailability.Available,
             DrawingOpacityPercent,
             AnnotationColor,
-            RoomInput);
+            RoomInput,
+            CheckForUpdates);
         RaisePropertyChanged(nameof(Room));
         RaisePropertyChanged(nameof(EmptyClientListMessage));
         Annotator.SetUsageHintsState(ShowUsageHints, hasShownUsageHints);
@@ -1796,6 +1851,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         IsLaunchAtStartup = startupRegistrationService?.IsEnabled
             ?? clientSettings.Startup.LaunchAtStartup;
         ShowUsageHints = clientSettings.Pointer.ShowUsageHints;
+        CheckForUpdates = clientSettings.Updates.CheckForUpdates;
         DrawingOpacityPercent = clientSettings.Pointer.DrawingOpacityPercent;
         AnnotationColor = clientSettings.Pointer.AnnotationColor;
         RoomInput = clientSettings.Server.Room;

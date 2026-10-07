@@ -1348,6 +1348,11 @@
                               Style="{StaticResource ToggleSwitchStyle}"
                               IsChecked="{Binding IsLaunchAtStartup}"
                               Content="Launch at startup" />
+                    <CheckBox Margin="0,0,0,8"
+                              Style="{StaticResource ToggleSwitchStyle}"
+                              IsChecked="{Binding CheckForUpdates}"
+                              ToolTip="Asks api.github.com for the latest release when the app starts. Nothing is downloaded or installed."
+                              Content="Check for updates on startup" />
 
                     <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}"
                                Text="Relay" />
@@ -1474,6 +1479,7 @@
                             Padding="0,12,0,0"
                             BorderBrush="#303030"
                             BorderThickness="0,1,0,0">
+                        <StackPanel>
                         <StackPanel HorizontalAlignment="Center"
                                     Orientation="Horizontal"
                                     Opacity="0.55">
@@ -1504,6 +1510,19 @@
                                           Data="{StaticResource Icon.GitHub}" />
                                 </Viewbox>
                             </Button>
+                        </StackPanel>
+                            <Button Margin="0,6,0,0"
+                                    Padding="0"
+                                    HorizontalAlignment="Center"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Cursor="Hand"
+                                    Foreground="#8AB4F8"
+                                    FontSize="10"
+                                    ToolTip="Open the release page on GitHub"
+                                    Content="{Binding UpdateAvailableText}"
+                                    Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                    Click="OnOpenUpdate" />
                         </StackPanel>
                     </Border>
                     </StackPanel>
@@ -1648,7 +1667,18 @@
                             Style="{StaticResource IconButtonStyle}"
                             Command="{Binding ToggleSettingsCommand}"
                             ToolTip="Settings">
-                        <ContentControl Style="{StaticResource FluentIcon}" Content="{StaticResource Icon.Settings}" />
+                        <Grid>
+                            <ContentControl Style="{StaticResource FluentIcon}" Content="{StaticResource Icon.Settings}" />
+                            <!-- Update badge: an overlay in the button's corner, independent of the icon. -->
+                            <Ellipse Width="8"
+                                     Height="8"
+                                     Margin="0,-6,-8,0"
+                                     HorizontalAlignment="Right"
+                                     VerticalAlignment="Top"
+                                     Fill="#E5484D"
+                                     IsHitTestVisible="False"
+                                     Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </Grid>
                     </Button>
                 </Grid>
             </Border>
