@@ -20,6 +20,7 @@ public sealed class ServerConnectionTester : IServerConnectionTester
     };
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(5);
     private const int MaximumVersionLength = 40;
+    private const string NegotiatePath = "/hubs/pointer/negotiate?negotiateVersion=1";
 
     // A stranger's endpoint may answer with anything at all, so the identity payload is read from
     // a bounded buffer instead of streaming whatever that endpoint decides to send.
@@ -86,6 +87,67 @@ public sealed class ServerConnectionTester : IServerConnectionTester
                 ? $"The server returned HTTP {(int)statusCode} ({statusCode})."
                 : "The server could not be reached.";
             return new ServerConnectionTestResult(false, message);
+        }
+        catch (UriFormatException)
+        {
+            return new ServerConnectionTestResult(false, "The server address is invalid.");
+        }
+    }
+
+    public async Task<ServerConnectionTestResult> TestAccessAsync(
+        string serverAddress,
+        string? passwordKey,
+        CancellationToken cancellationToken = default)
+    {
+        var reachability = await TestAsync(serverAddress, cancellationToken).ConfigureAwait(false);
+        if (!reachability.IsSuccessful)
+        {
+            return reachability;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TestTimeout);
+        try
+        {
+            // The relay's front door runs before the hub does, so negotiating is enough to learn
+            // whether a key is admitted: no connection is started and nothing is registered.
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"{serverAddress.TrimEnd('/')}{NegotiatePath}");
+            if (!string.IsNullOrWhiteSpace(passwordKey))
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", passwordKey);
+            }
+
+            using var response = await httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                return reachability;
+            }
+
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return new ServerConnectionTestResult(
+                    false,
+                    string.IsNullOrWhiteSpace(passwordKey)
+                        ? "This server requires a password."
+                        : "This server did not accept this password.");
+            }
+
+            return new ServerConnectionTestResult(
+                false,
+                $"The server returned HTTP {(int)response.StatusCode} ({response.StatusCode}).");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new ServerConnectionTestResult(false, "The connection test timed out.");
+        }
+        catch (HttpRequestException)
+        {
+            return new ServerConnectionTestResult(false, "The server could not be reached.");
         }
         catch (UriFormatException)
         {

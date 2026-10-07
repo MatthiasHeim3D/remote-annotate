@@ -1080,7 +1080,7 @@
             <!-- Settings view -->
             <Grid Grid.Row="0"
                   Margin="20,14,14,14"
-                  Visibility="{Binding IsSettingsOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  Visibility="{Binding ShowSettingsPage, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -1346,113 +1346,60 @@
                               Content="Launch at startup" />
 
                     <TextBlock Style="{StaticResource SettingsSectionHeaderStyle}"
-                               Text="Connection" />
-                    <TextBlock Margin="0,0,0,6" Text="Server address" />
+                               Text="Relay" />
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <Border Padding="10,0"
-                                Background="#343434"
-                                BorderBrush="#555555"
-                                BorderThickness="1,1,0,1"
-                                CornerRadius="4,0,0,4">
-                            <TextBlock VerticalAlignment="Center"
-                                       Foreground="#D8D8D8"
-                                       Text="https://" />
-                        </Border>
-                        <TextBox Grid.Column="1"
-                                 BorderThickness="0,1,1,1"
-                                 Text="{Binding ServerAddressInput, UpdateSourceTrigger=PropertyChanged}" />
-                        <Button Grid.Column="2"
-                                Width="72"
-                                Height="36"
-                                Margin="8,0,0,0"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Command="{Binding TestServerConnectionCommand}"
-                                Content="Test"
-                                ToolTip="Test the server connection and save the address" />
-                    </Grid>
-                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
-                               Text="{Binding ServerAddressValidationMessage}" />
-                    <StackPanel Margin="0,6,0,0"
-                                Orientation="Horizontal"
-                                Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   FontSize="14"
-                                   Foreground="#6CCB7F"
-                                   Text="&#xE73E;" />
-                        <TextBlock Margin="7,0,0,0"
-                                   VerticalAlignment="Center"
-                                   FontSize="11"
-                                   Foreground="#8C8C8C"
-                                   TextTrimming="CharacterEllipsis"
-                                   Text="{Binding ServerVersionLabel}"
-                                   Visibility="{Binding HasServerVersion, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    </StackPanel>
-                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
-                               Text="{Binding ServerConnectionTestMessage}" />
-
-                    <Grid Margin="0,18,0,0"
-                          Visibility="{Binding ShowServerPasswordSetState, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock VerticalAlignment="Center"
+                                   FontSize="14"
+                                   Foreground="#E8E8E8"
                                    TextTrimming="CharacterEllipsis"
-                                   Text="Server password is set" />
+                                   Text="{Binding SavedServerAddressDisplay}"
+                                   ToolTip="{Binding SavedServerAddressDisplay}" />
                         <Button Grid.Column="1"
-                                Style="{StaticResource LinkButtonStyle}"
-                                Command="{Binding ChangeServerPasswordCommand}"
-                                Content="Change" />
-                        <Button Grid.Column="2"
-                                Style="{StaticResource LinkButtonStyle}"
-                                Command="{Binding ClearServerPasswordCommand}"
-                                Content="Remove" />
+                                Width="72"
+                                Height="32"
+                                Margin="8,0,0,0"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Command="{Binding ChangeServerCommand}"
+                                Content="Change"
+                                ToolTip="Set a new server address and password" />
                     </Grid>
-                    <StackPanel Visibility="{Binding ShowServerPasswordEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Margin="0,18,0,6" Text="Server password" />
-                        <TextBlock Margin="0,0,0,8"
-                                   FontSize="11"
-                                   Foreground="#AFAFAF"
-                                   TextWrapping="Wrap"
-                                   Text="The password for this relay. Without it the relay does not accept this client at all." />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <PasswordBox x:Name="ServerPasswordBox"
-                                         PasswordChanged="OnServerPasswordChanged" />
-                            <Button Grid.Column="1"
-                                    Width="66"
-                                    Height="36"
-                                    Margin="8,0,0,0"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    Command="{Binding ApplyServerPasswordCommand}"
-                                    Content="Apply" />
-                            <Button Grid.Column="2"
-                                    Width="66"
-                                    Height="36"
-                                    Margin="6,0,0,0"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    Command="{Binding CancelServerPasswordChangeCommand}"
-                                    Content="Cancel"
-                                    Visibility="{Binding IsChangingServerPassword, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        </Grid>
-                        <TextBlock Style="{StaticResource ValidationMessageStyle}"
-                                   Text="{Binding ServerPasswordValidationMessage}" />
+                    <!-- One fixed-height line, so the result appearing never moves what is below. -->
+                    <StackPanel Height="30"
+                                Margin="0,4,0,0"
+                                Orientation="Horizontal">
+                        <Button Style="{StaticResource IconButtonStyle}"
+                                Command="{Binding TestServerConnectionCommand}"
+                                Content="&#xE72C;"
+                                ToolTip="Test the connection to this relay" />
+                        <StackPanel Margin="8,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Visibility="{Binding IsServerAddressVerified, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Foreground="#6CCB7F"
+                                       Text="&#xE73E;" />
+                            <TextBlock Margin="7,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="11"
+                                       Foreground="#8C8C8C"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{Binding ServerVersionLabel}"
+                                       Visibility="{Binding HasServerVersion, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+                        <TextBlock Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource ValidationMessageStyle}"
+                                   MaxWidth="260"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap"
+                                   ToolTip="{Binding ServerConnectionTestMessage}"
+                                   Text="{Binding ServerConnectionTestMessage}" />
                     </StackPanel>
-                    <TextBlock Margin="0,8,0,0"
-                               FontSize="11"
-                               Foreground="#AFAFAF"
-                               Text="{Binding ServerPasswordCheckMessage}"
-                               Visibility="{Binding IsCheckingServerPassword, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <Border Margin="0,10,0,0"
                             Padding="10,8"
                             Background="#3A3222"
@@ -1530,6 +1477,73 @@
                     </Border>
                     </StackPanel>
                 </ScrollViewer>
+            </Grid>
+
+            <!-- Change server pane: the address and password only ever change together. -->
+            <Grid Grid.Row="0"
+                  Margin="20,14,14,14"
+                  Visibility="{Binding ShowServerChangePane, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Margin="0,0,0,12"
+                           VerticalAlignment="Center"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Text="Relay settings" />
+                <StackPanel Grid.Row="1">
+                    <TextBlock Margin="0,0,0,8"
+                               FontSize="11"
+                               Foreground="#AFAFAF"
+                               TextWrapping="Wrap"
+                               Text="Leave the password empty for a server that has none." />
+                    <TextBlock Margin="0,0,0,6" Text="New relay address" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Padding="10,0"
+                                Background="#343434"
+                                BorderBrush="#555555"
+                                BorderThickness="1,1,0,1"
+                                CornerRadius="4,0,0,4">
+                            <TextBlock VerticalAlignment="Center"
+                                       Foreground="#D8D8D8"
+                                       Text="https://" />
+                        </Border>
+                        <TextBox x:Name="NewServerAddressBox"
+                                 Grid.Column="1"
+                                 BorderThickness="0,1,1,1"
+                                 IsEnabled="{Binding CanEditServerChange}"
+                                 Text="{Binding NewServerAddressInput, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
+                               Text="{Binding NewServerAddressValidationMessage}" />
+                    <TextBlock Margin="0,12,0,6" Text="Relay password" />
+                    <PasswordBox x:Name="NewServerPasswordBox"
+                                 IsEnabled="{Binding CanEditServerChange}"
+                                 PasswordChanged="OnNewServerPasswordChanged" />
+                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
+                               Text="{Binding NewServerPasswordValidationMessage}" />
+                    <TextBlock Style="{StaticResource ValidationMessageStyle}"
+                               Text="{Binding ServerChangeMessage}" />
+                    <StackPanel Margin="0,16,0,0"
+                                Orientation="Horizontal">
+                        <Button Width="80"
+                                Height="36"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding ApplyServerChangeCommand}"
+                                Content="Apply" />
+                        <Button Width="80"
+                                Height="36"
+                                Margin="8,0,0,0"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Command="{Binding CancelServerChangeCommand}"
+                                Content="Cancel" />
+                    </StackPanel>
+                </StackPanel>
             </Grid>
 
             <!-- Bottom profile and settings bar -->

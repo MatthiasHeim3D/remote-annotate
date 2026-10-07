@@ -112,75 +112,103 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task StoredServerPassword_SuppressesTheWarningAndAllowsRemoval()
+    public void StoredServerPassword_SuppressesTheWarning()
     {
         using var overlay = new FakeOverlayService();
-        var relay = new FakeRelayClient();
         var settings = new ClientSettings();
         settings.Server.PasswordKey = "stored-group-key";
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
-            hostRelayClient: relay,
+            hostRelayClient: new FakeRelayClient(),
             clientSettings: settings);
 
         Assert.True(viewModel.HasServerPassword);
         Assert.False(viewModel.ShowServerPasswordWarning);
-        Assert.True(viewModel.ClearServerPasswordCommand.CanExecute(null));
-
-        await viewModel.ClearServerPasswordAsync();
-
-        Assert.False(viewModel.HasServerPassword);
-        Assert.True(viewModel.ShowServerPasswordWarning);
-        Assert.Null(settings.Server.PasswordKey);
-        Assert.Null(relay.ServerPasswordKey);
-        Assert.Equal(1, relay.ServerPasswordKeyUpdateCount);
     }
 
     [Fact]
-    public async Task SubmittingANewServerPassword_HidesTheOldErrorAndShowsCheckingUntilTheRelayAnswers()
+    public async Task ChangePane_ANewPasswordHidesTheOldErrorAndShowsCheckingUntilTheRelayAnswers()
     {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        testSettings.Settings.Server.PasswordKey = "wrong-key";
         using var overlay = new FakeOverlayService();
         var relay = new FakeRelayClient { RejectsServerPassword = true };
-        var settings = new ClientSettings();
-        settings.Server.PasswordKey = "wrong-key";
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
             hostRelayClient: relay,
-            clientSettings: settings);
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: new FakeServerPasswordStore());
         relay.RaiseConnectionStatus(
             RelayConnectionStatus.Unauthorized,
             "The server password is not correct.");
         Assert.True(viewModel.ShowServerPasswordWarning);
 
         relay.RejectsServerPassword = false;
-        relay.CapabilitiesGate = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        viewModel.ChangeServerPasswordCommand.Execute(null);
-        viewModel.ServerPasswordInput = "the right password";
-        var apply = viewModel.ApplyServerPasswordDraftAsync();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        relay.CapabilitiesGate = gate;
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "relay.example.test";
+        viewModel.NewServerPasswordInput = "the right password";
+        var apply = viewModel.ApplyServerChangeAsync();
         while (relay.RelayCapabilitiesRequestCount == 0)
         {
             await Task.Delay(10);
         }
 
         Assert.True(viewModel.IsCheckingServerPassword);
-        Assert.Equal("Checking...", viewModel.ServerPasswordCheckMessage);
         Assert.False(viewModel.ShowServerPasswordWarning);
         Assert.False(viewModel.IsServerPasswordRejected);
 
         relay.RaiseConnectionStatus(RelayConnectionStatus.Connected, "Connected to relay.");
-        relay.CapabilitiesGate.SetResult();
+        gate.SetResult();
         await apply;
 
         Assert.False(viewModel.IsCheckingServerPassword);
-        Assert.Empty(viewModel.ServerPasswordCheckMessage);
         Assert.False(viewModel.IsServerPasswordRejected);
     }
 
     [Fact]
-    public void WithoutAStoredServerPassword_TheBoxIsOfferedWithoutAChangeStep()
+    public void SettingsPage_ShowsTheSavedAddressAndOpensTheChangePaneUntilCancelled()
+    {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        using var overlay = new FakeOverlayService();
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: testSettings.Settings);
+
+        Assert.Equal("relay.example.test", viewModel.SavedServerAddressDisplay);
+        Assert.False(viewModel.ShowSettingsPage);
+
+        viewModel.ToggleSettingsCommand.Execute(null);
+
+        Assert.True(viewModel.ShowSettingsPage);
+        Assert.False(viewModel.ShowServerChangePane);
+
+        viewModel.ChangeServerCommand.Execute(null);
+
+        Assert.False(viewModel.ShowSettingsPage);
+        Assert.True(viewModel.ShowServerChangePane);
+
+        viewModel.NewServerAddressInput = "other.example.test";
+        viewModel.NewServerPasswordInput = "a long enough password";
+        viewModel.CancelServerChangeCommand.Execute(null);
+
+        Assert.True(viewModel.ShowSettingsPage);
+        Assert.False(viewModel.ShowServerChangePane);
+        Assert.Empty(viewModel.NewServerAddressInput);
+        Assert.Empty(viewModel.NewServerPasswordInput);
+        Assert.Equal("relay.example.test", viewModel.SavedServerAddressDisplay);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+    }
+
+    [Fact]
+    public void SettingsPage_WithoutAServerSaysSoAndStillOffersTheChangePane()
     {
         using var overlay = new FakeOverlayService();
         using var viewModel = new MainWindowViewModel(
@@ -188,85 +216,247 @@ public sealed class MainWindowViewModelTests
             overlay,
             clientSettings: new ClientSettings());
 
-        Assert.True(viewModel.ShowServerPasswordEditor);
-        Assert.False(viewModel.ShowServerPasswordSetState);
-        Assert.False(viewModel.IsChangingServerPassword);
-        Assert.False(viewModel.ChangeServerPasswordCommand.CanExecute(null));
-        Assert.False(viewModel.ClearServerPasswordCommand.CanExecute(null));
+        Assert.Equal("Not set", viewModel.SavedServerAddressDisplay);
+        Assert.False(viewModel.TestServerConnectionCommand.CanExecute(null));
+        Assert.True(viewModel.ChangeServerCommand.CanExecute(null));
     }
 
     [Fact]
-    public async Task ChangingAStoredServerPassword_OffersTheBoxUntilItIsAppliedOrCancelled()
+    public void ChangePane_StripsPastedHttpsPrefixAndRejectsHttp()
     {
         using var overlay = new FakeOverlayService();
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: new ClientSettings());
+
+        viewModel.NewServerAddressInput = "https://relay.example.test/path/";
+
+        Assert.Equal("relay.example.test/path/", viewModel.NewServerAddressInput);
+        Assert.Equal("https://relay.example.test/path/", viewModel.NewServerAddress);
+        Assert.Empty(viewModel.NewServerAddressValidationMessage);
+
+        viewModel.NewServerAddressInput = "http://relay.example.test";
+
+        Assert.Contains(
+            "HTTPS",
+            viewModel.NewServerAddressValidationMessage,
+            StringComparison.Ordinal);
+        Assert.False(viewModel.ApplyServerChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ChangePane_ApplyNeedsAnAddressAndEitherNoPasswordOrAValidOne()
+    {
+        using var overlay = new FakeOverlayService();
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: new ClientSettings());
+        viewModel.ChangeServerCommand.Execute(null);
+
+        Assert.False(viewModel.ApplyServerChangeCommand.CanExecute(null));
+
+        viewModel.NewServerAddressInput = "relay.example.test";
+
+        Assert.True(viewModel.ApplyServerChangeCommand.CanExecute(null));
+
+        viewModel.NewServerPasswordInput = "short";
+
+        Assert.False(viewModel.ApplyServerChangeCommand.CanExecute(null));
+        Assert.NotEmpty(viewModel.NewServerPasswordValidationMessage);
+
+        viewModel.NewServerPasswordInput = "a long enough password";
+
+        Assert.True(viewModel.ApplyServerChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ChangePane_ARefusedServerOrPasswordSavesNothing()
+    {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        var oldKey = ServerPasswordKey.Derive("the working password");
+        testSettings.Settings.Server.PasswordKey = oldKey;
+        using var overlay = new FakeOverlayService();
         var relay = new FakeRelayClient();
-        var settings = new ClientSettings();
-        var storedKey = ServerPasswordKey.Derive("first team password");
-        settings.Server.PasswordKey = storedKey;
+        var store = new FakeServerPasswordStore();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(false, "This server did not accept this password."));
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
             hostRelayClient: relay,
-            clientSettings: settings);
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: store);
+        var reinitialized = false;
+        viewModel.RelayReinitializationRequested += (_, _) => reinitialized = true;
+        viewModel.ToggleSettingsCommand.Execute(null);
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "new.example.test";
+        viewModel.NewServerPasswordInput = "not the relay password";
 
-        Assert.True(viewModel.ShowServerPasswordSetState);
-        Assert.False(viewModel.ShowServerPasswordEditor);
+        await viewModel.ApplyServerChangeAsync();
 
-        viewModel.ChangeServerPasswordCommand.Execute(null);
-
-        Assert.True(viewModel.IsChangingServerPassword);
-        Assert.True(viewModel.ShowServerPasswordEditor);
-        Assert.False(viewModel.ShowServerPasswordSetState);
-        Assert.False(viewModel.ApplyServerPasswordCommand.CanExecute(null));
-
-        viewModel.ServerPasswordInput = "short";
-
-        Assert.False(viewModel.ApplyServerPasswordCommand.CanExecute(null));
-
-        viewModel.CancelServerPasswordChangeCommand.Execute(null);
-
-        Assert.False(viewModel.IsChangingServerPassword);
-        Assert.True(viewModel.ShowServerPasswordSetState);
-        Assert.Empty(viewModel.ServerPasswordInput);
-        Assert.Equal(storedKey, settings.Server.PasswordKey);
-
-        viewModel.ChangeServerPasswordCommand.Execute(null);
-        viewModel.ServerPasswordInput = "second team password";
-
-        Assert.True(viewModel.ApplyServerPasswordCommand.CanExecute(null));
-        await viewModel.ApplyServerPasswordDraftAsync();
-
-        Assert.False(viewModel.IsChangingServerPassword);
-        Assert.True(viewModel.ShowServerPasswordSetState);
-        Assert.Empty(viewModel.ServerPasswordInput);
-        Assert.Equal(ServerPasswordKey.Derive("second team password"), relay.ServerPasswordKey);
-        Assert.Equal(relay.ServerPasswordKey, settings.Server.PasswordKey);
+        Assert.Equal(["https://new.example.test"], tester.TestedAddresses);
+        Assert.Equal(
+            ServerPasswordKey.Derive("not the relay password"),
+            Assert.Single(tester.TestedKeys));
+        Assert.Equal("This server did not accept this password.", viewModel.ServerChangeMessage);
+        Assert.True(viewModel.ShowServerChangePane);
+        Assert.False(viewModel.IsApplyingServerChange);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.Equal(oldKey, testSettings.Settings.Server.PasswordKey);
+        Assert.Equal(0, store.SaveCount + store.ClearCount);
+        Assert.Equal(0, relay.ServerPasswordKeyUpdateCount);
+        Assert.False(reinitialized);
+        Assert.Equal(
+            "https://relay.example.test",
+            TemporaryClientSettings.Reload(testSettings).Server.BaseUrl);
     }
 
     [Fact]
-    public async Task AServerPasswordTheRelayRefuses_IsReportedWhenItIsApplied()
+    public async Task ChangePane_ShowsCheckingUntilTheServerAnswersAndCancelDropsTheResult()
     {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        using var overlay = new FakeOverlayService();
+        var store = new FakeServerPasswordStore();
+        var gate = new TaskCompletionSource<ServerConnectionTestResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."))
+        {
+            Gate = gate,
+        };
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: store);
+        var reinitialized = false;
+        viewModel.RelayReinitializationRequested += (_, _) => reinitialized = true;
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "new.example.test";
+        viewModel.NewServerPasswordInput = "a long enough password";
+
+        var applying = viewModel.ApplyServerChangeAsync();
+        await tester.WaitForRequestAsync();
+
+        Assert.True(viewModel.IsApplyingServerChange);
+        Assert.False(viewModel.CanEditServerChange);
+        Assert.Equal("Checking...", viewModel.ServerChangeMessage);
+        Assert.False(viewModel.ApplyServerChangeCommand.CanExecute(null));
+
+        viewModel.CancelServerChangeCommand.Execute(null);
+        gate.TrySetResult(new ServerConnectionTestResult(true, "Connection successful."));
+        await applying;
+
+        Assert.False(viewModel.IsApplyingServerChange);
+        Assert.False(viewModel.ShowServerChangePane);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.Equal(0, store.SaveCount + store.ClearCount);
+        Assert.False(reinitialized);
+    }
+
+    [Fact]
+    public async Task ChangePane_AcceptedPasswordOnTheSameServerIsSavedAndPresentedToTheRelay()
+    {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        testSettings.Settings.Server.PasswordKey = ServerPasswordKey.Derive("first team password");
         using var overlay = new FakeOverlayService();
         var relay = new FakeRelayClient();
-        var settings = new ClientSettings();
-        settings.Server.PasswordKey = ServerPasswordKey.Derive("the working password");
+        var store = new FakeServerPasswordStore();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
             hostRelayClient: relay,
-            clientSettings: settings);
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: store);
+        var reinitialized = false;
+        viewModel.RelayReinitializationRequested += (_, _) => reinitialized = true;
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "relay.example.test";
+        viewModel.NewServerPasswordInput = "second team password";
 
-        viewModel.ChangeServerPasswordCommand.Execute(null);
-        viewModel.ServerPasswordInput = "not the relay password";
-        relay.RejectsServerPassword = true;
-        await viewModel.ApplyServerPasswordDraftAsync();
+        await viewModel.ApplyServerChangeAsync();
 
-        // Handing the key over only drops the connection, so without a probe of its own the
-        // client would sit there disconnected and never learn the password was the reason.
-        Assert.Equal(1, relay.RelayCapabilitiesRequestCount);
-        Assert.True(viewModel.IsServerPasswordRejected);
-        Assert.True(viewModel.ShowServerPasswordWarning);
-        Assert.Equal("This relay did not accept this password.", viewModel.ServerPasswordWarning);
+        var expectedKey = ServerPasswordKey.Derive("second team password");
+        Assert.False(viewModel.ShowServerChangePane);
+        Assert.Empty(viewModel.NewServerPasswordInput);
+        Assert.Empty(viewModel.ServerChangeMessage);
+        Assert.True(viewModel.HasServerPassword);
+        Assert.Equal(expectedKey, store.SavedKey);
+        Assert.Equal(expectedKey, testSettings.Settings.Server.PasswordKey);
+        Assert.Equal(expectedKey, relay.ServerPasswordKey);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.False(reinitialized);
+    }
+
+    [Fact]
+    public async Task ChangePane_AcceptedNewServerIsSavedWithItsPasswordAndReinitializesTheRelay()
+    {
+        using var testSettings = new TemporaryClientSettings("https://old.example.test");
+        testSettings.Settings.Server.PasswordKey = ServerPasswordKey.Derive("old server password");
+        using var overlay = new FakeOverlayService();
+        var store = new FakeServerPasswordStore();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: store);
+        var reinitialized = false;
+        viewModel.RelayReinitializationRequested += (_, _) => reinitialized = true;
+        viewModel.ToggleSettingsCommand.Execute(null);
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "new.example.test";
+        viewModel.NewServerPasswordInput = "new server password";
+
+        await viewModel.ApplyServerChangeAsync();
+
+        var expectedKey = ServerPasswordKey.Derive("new server password");
+        Assert.Equal("https://new.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.Equal(
+            "https://new.example.test",
+            TemporaryClientSettings.Reload(testSettings).Server.BaseUrl);
+        Assert.Equal(expectedKey, store.SavedKey);
+        Assert.Equal(expectedKey, testSettings.Settings.Server.PasswordKey);
+        Assert.False(viewModel.ShowServerChangePane);
+        Assert.False(viewModel.IsSettingsOpen);
+        Assert.True(reinitialized);
+    }
+
+    [Fact]
+    public async Task ChangePane_AnEmptyPasswordForAnOpenServerClearsTheStoredOne()
+    {
+        using var testSettings = new TemporaryClientSettings("https://old.example.test");
+        testSettings.Settings.Server.PasswordKey = ServerPasswordKey.Derive("old server password");
+        using var overlay = new FakeOverlayService();
+        var store = new FakeServerPasswordStore();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester,
+            serverPasswordStore: store);
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "open.example.test";
+
+        await viewModel.ApplyServerChangeAsync();
+
+        Assert.Null(Assert.Single(tester.TestedKeys));
+        Assert.Equal(1, store.ClearCount);
+        Assert.Null(testSettings.Settings.Server.PasswordKey);
+        Assert.False(viewModel.HasServerPassword);
+        Assert.Equal("https://open.example.test", testSettings.Settings.Server.BaseUrl);
     }
 
     [Fact]
@@ -452,126 +642,61 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void ServerAddressInput_StripsPastedHttpsPrefixAndRejectsHttp()
+    public async Task ClosingSettings_WithTheChangePaneOpenLeavesTheSavedServerAlone()
     {
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
         using var overlay = new FakeOverlayService();
-        using var viewModel = new MainWindowViewModel(
-            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
-            overlay);
-
-        viewModel.ServerAddressInput = "https://relay.example.test/path/";
-
-        Assert.Equal("relay.example.test/path/", viewModel.ServerAddressInput);
-        Assert.Equal("https://relay.example.test/path/", viewModel.ServerAddress);
-        Assert.Empty(viewModel.ServerAddressValidationMessage);
-
-        viewModel.ServerAddressInput = "http://relay.example.test";
-
-        Assert.Contains("HTTPS", viewModel.ServerAddressValidationMessage, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task InvalidServerAddress_DoesNotPreventClosingSettings()
-    {
-        using var testSettings = new TemporaryClientSettings(string.Empty);
-        using var overlay = new FakeOverlayService();
+        var tester = new FakeServerConnectionTester(
+            new ServerConnectionTestResult(true, "Connection successful."));
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
-            clientSettings: testSettings.Settings);
-        viewModel.ServerAddressInput = "http://relay.example.test";
+            clientSettings: testSettings.Settings,
+            serverConnectionTester: tester);
+        viewModel.ToggleSettingsCommand.Execute(null);
+        viewModel.ChangeServerCommand.Execute(null);
+        viewModel.NewServerAddressInput = "other.example.test";
 
         await viewModel.CloseSettingsAsync();
 
         Assert.False(viewModel.IsSettingsOpen);
-        Assert.Empty(viewModel.ServerAddressInput);
+        Assert.False(viewModel.ShowServerChangePane);
+        Assert.Empty(tester.TestedAddresses);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
     }
 
     [Fact]
-    public async Task ChangingTheServerAddress_DropsThePasswordOfTheOldServerAtOnce()
+    public async Task TestServerConnection_ChecksTheSavedAddressWithTheSavedPasswordAndChangesNothing()
     {
-        using var testSettings = new TemporaryClientSettings("https://old.example.test");
-        testSettings.Settings.Server.PasswordKey = "old-server-key";
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
+        var key = ServerPasswordKey.Derive("the working password");
+        testSettings.Settings.Server.PasswordKey = key;
         using var overlay = new FakeOverlayService();
         var tester = new FakeServerConnectionTester(
-            new ServerConnectionTestResult(true, "Connection successful."));
-        var relay = new FakeRelayClient();
-        using var viewModel = new MainWindowViewModel(
-            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
-            overlay,
-            hostRelayClient: relay,
-            clientSettings: testSettings.Settings,
-            serverConnectionTester: tester);
-        viewModel.ToggleSettingsCommand.Execute(null);
-        Assert.True(viewModel.HasServerPassword);
-
-        viewModel.ServerAddressInput = "new.example.test";
-        await viewModel.TestServerConnectionAsync();
-
-        Assert.False(viewModel.HasServerPassword);
-        Assert.True(viewModel.ShowServerPasswordEditor);
-        Assert.False(viewModel.ShowServerPasswordSetState);
-        Assert.Null(testSettings.Settings.Server.PasswordKey);
-        Assert.Null(relay.ServerPasswordKey);
-    }
-
-    [Fact]
-    public async Task TestServerConnection_SuccessSavesAddressAndShowsCheckmark()
-    {
-        using var testSettings = new TemporaryClientSettings(string.Empty);
-        using var overlay = new FakeOverlayService();
-        var tester = new FakeServerConnectionTester(
-            new ServerConnectionTestResult(true, "Connection successful."));
+            new ServerConnectionTestResult(true, "Connection successful.", "1.2.3"));
         using var viewModel = new MainWindowViewModel(
             new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
             overlay,
             clientSettings: testSettings.Settings,
             serverConnectionTester: tester);
         viewModel.ToggleSettingsCommand.Execute(null);
-        viewModel.ServerAddressInput = "relay.example.test";
 
         Assert.True(viewModel.TestServerConnectionCommand.CanExecute(null));
         await viewModel.TestServerConnectionAsync();
 
         Assert.Equal(["https://relay.example.test"], tester.TestedAddresses);
-        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.Equal(key, Assert.Single(tester.TestedKeys));
         Assert.True(viewModel.IsServerAddressVerified);
-        Assert.True(viewModel.IsSettingsOpen);
-
-        // The saved address stays testable so a reachability check never needs a fake edit first.
-        Assert.True(viewModel.TestServerConnectionCommand.CanExecute(null));
-    }
-
-    [Fact]
-    public async Task TestServerConnection_AdvertisedVersionIsShownAndClearedOnEdit()
-    {
-        using var testSettings = new TemporaryClientSettings(string.Empty);
-        using var overlay = new FakeOverlayService();
-        var tester = new FakeServerConnectionTester(
-            new ServerConnectionTestResult(true, "Connection successful.", "1.2.3"));
-        using var viewModel = new MainWindowViewModel(
-            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
-            overlay,
-            clientSettings: testSettings.Settings,
-            serverConnectionTester: tester);
-        viewModel.ToggleSettingsCommand.Execute(null);
-        viewModel.ServerAddressInput = "relay.example.test";
-
-        await viewModel.TestServerConnectionAsync();
-
-        Assert.True(viewModel.HasServerVersion);
         Assert.Equal("Server version 1.2.3", viewModel.ServerVersionLabel);
-
-        viewModel.ServerAddressInput = "other.example.test";
-
-        Assert.False(viewModel.HasServerVersion);
-        Assert.Empty(viewModel.ServerVersionLabel);
+        Assert.True(viewModel.IsSettingsOpen);
+        Assert.Equal("https://relay.example.test", testSettings.Settings.Server.BaseUrl);
+        Assert.Equal(key, testSettings.Settings.Server.PasswordKey);
     }
 
     [Fact]
-    public async Task TestServerConnection_UnreachableServerDropsStaleVersion()
+    public async Task TestServerConnection_FailureShowsTheReasonAndDropsAStaleVersion()
     {
-        using var testSettings = new TemporaryClientSettings(string.Empty);
+        using var testSettings = new TemporaryClientSettings("https://relay.example.test");
         using var overlay = new FakeOverlayService();
         var tester = new FakeServerConnectionTester(
             new ServerConnectionTestResult(true, "Connection successful.", "1.2.3"));
@@ -581,64 +706,18 @@ public sealed class MainWindowViewModelTests
             clientSettings: testSettings.Settings,
             serverConnectionTester: tester);
         viewModel.ToggleSettingsCommand.Execute(null);
-        viewModel.ServerAddressInput = "relay.example.test";
         await viewModel.TestServerConnectionAsync();
+        Assert.True(viewModel.HasServerVersion);
 
         tester.Result = new ServerConnectionTestResult(
             false,
             "The server could not be reached.");
         await viewModel.TestServerConnectionAsync();
 
+        Assert.False(viewModel.IsServerAddressVerified);
         Assert.False(viewModel.HasServerVersion);
         Assert.Empty(viewModel.ServerVersionLabel);
-    }
-
-    [Fact]
-    public async Task ClosingSettings_UntestedReachableAddressTestsAndSavesIt()
-    {
-        using var testSettings = new TemporaryClientSettings("https://old.example.test");
-        using var overlay = new FakeOverlayService();
-        var tester = new FakeServerConnectionTester(
-            new ServerConnectionTestResult(true, "Connection successful."));
-        using var viewModel = new MainWindowViewModel(
-            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
-            overlay,
-            clientSettings: testSettings.Settings,
-            serverConnectionTester: tester);
-        var relayReinitializationRequested = false;
-        viewModel.RelayReinitializationRequested += (_, _) =>
-            relayReinitializationRequested = true;
-        viewModel.ToggleSettingsCommand.Execute(null);
-        viewModel.ServerAddressInput = "new.example.test";
-
-        await viewModel.CloseSettingsAsync();
-
-        Assert.Equal(["https://new.example.test"], tester.TestedAddresses);
-        Assert.Equal("https://new.example.test", testSettings.Settings.Server.BaseUrl);
-        Assert.False(viewModel.IsSettingsOpen);
-        Assert.True(relayReinitializationRequested);
-    }
-
-    [Fact]
-    public async Task ClosingSettings_UnreachableAddressRestoresConfiguredAddress()
-    {
-        using var testSettings = new TemporaryClientSettings("https://old.example.test");
-        using var overlay = new FakeOverlayService();
-        var tester = new FakeServerConnectionTester(
-            new ServerConnectionTestResult(false, "The server could not be reached."));
-        using var viewModel = new MainWindowViewModel(
-            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
-            overlay,
-            clientSettings: testSettings.Settings,
-            serverConnectionTester: tester);
-        viewModel.ServerAddressInput = "unreachable.example.test";
-
-        await viewModel.CloseSettingsAsync();
-
-        Assert.Equal(["https://unreachable.example.test"], tester.TestedAddresses);
-        Assert.Equal("https://old.example.test", testSettings.Settings.Server.BaseUrl);
-        Assert.Equal("old.example.test", viewModel.ServerAddressInput);
-        Assert.False(viewModel.IsSettingsOpen);
+        Assert.Equal("The server could not be reached.", viewModel.ServerConnectionTestMessage);
     }
 
     [Fact]
@@ -1418,12 +1497,45 @@ public sealed class MainWindowViewModelTests
                     StringComparison.OrdinalIgnoreCase));
     }
 
+    private sealed class FakeServerPasswordStore : IServerPasswordStore
+    {
+        public string? SavedKey { get; private set; }
+
+        public int SaveCount { get; private set; }
+
+        public int ClearCount { get; private set; }
+
+        public string? Load() => SavedKey;
+
+        public void Save(string groupKey)
+        {
+            SavedKey = groupKey;
+            SaveCount++;
+        }
+
+        public void Clear()
+        {
+            SavedKey = null;
+            ClearCount++;
+        }
+    }
+
     private sealed class FakeServerConnectionTester(ServerConnectionTestResult result)
         : IServerConnectionTester
     {
+        private readonly TaskCompletionSource requested = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         public List<string> TestedAddresses { get; } = [];
 
+        public List<string?> TestedKeys { get; } = [];
+
         public ServerConnectionTestResult Result { get; set; } = result;
+
+        /// <summary>When set, a check waits for it, which holds one in flight.</summary>
+        public TaskCompletionSource<ServerConnectionTestResult>? Gate { get; set; }
+
+        public Task WaitForRequestAsync() => requested.Task;
 
         public Task<ServerConnectionTestResult> TestAsync(
             string serverAddress,
@@ -1432,6 +1544,20 @@ public sealed class MainWindowViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             TestedAddresses.Add(serverAddress);
             return Task.FromResult(Result);
+        }
+
+        public async Task<ServerConnectionTestResult> TestAccessAsync(
+            string serverAddress,
+            string? passwordKey,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TestedAddresses.Add(serverAddress);
+            TestedKeys.Add(passwordKey);
+            requested.TrySetResult();
+            return Gate is null
+                ? Result
+                : await Gate.Task.WaitAsync(cancellationToken);
         }
     }
 
