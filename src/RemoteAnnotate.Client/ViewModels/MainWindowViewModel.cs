@@ -65,6 +65,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private string annotationColor = AnnotationColors.Default;
     private bool isServerAddressVerified;
     private bool isServerConnectionTestFailed;
+    private bool isServerConnectionTestRunning;
     private bool hasServerPassword;
     private bool isChangingServer;
     private bool isApplyingServerChange;
@@ -508,16 +509,31 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private bool IsServerConnectionTestFailed
+    /// <summary>
+    /// True once a test has run and been refused, false again as soon as the next test starts or
+    /// the verdict is dropped. Paired with <see cref="IsServerAddressVerified"/>: at most one of
+    /// the two holds, and neither does until a test has actually finished.
+    /// </summary>
+    public bool IsServerConnectionTestFailed
     {
         get => isServerConnectionTestFailed;
-        set
+        private set
         {
             if (SetProperty(ref isServerConnectionTestFailed, value))
             {
                 RaisePropertyChanged(nameof(ServerConnectionTestIcon));
             }
         }
+    }
+
+    /// <summary>
+    /// True while a relay test is in flight. The result line reads it to show its progress text
+    /// as a neutral note rather than in the colour a refused relay is reported in.
+    /// </summary>
+    public bool IsServerConnectionTestRunning
+    {
+        get => isServerConnectionTestRunning;
+        private set => SetProperty(ref isServerConnectionTestRunning, value);
     }
 
     /// <summary>
@@ -540,8 +556,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// The version the last reached server advertised, empty when it is unknown. It is refreshed
-    /// by every connection test and cleared as soon as the address is edited. It is rendered next
-    /// to the verified checkmark, which carries the success message on its own.
+    /// by every connection test and cleared as soon as the address is edited. It is rendered on
+    /// the result line under the relay address, in place of <see cref="ServerConnectionTestMessage"/>,
+    /// which a successful test clears because the button icon already carries the verdict.
     /// </summary>
     public string ServerVersionLabel
     {
@@ -1596,9 +1613,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         IsServerConnectionTestFailed = false;
         ServerVersionLabel = string.Empty;
         ServerConnectionTestMessage = "Testing connection...";
-        var result = await serverConnectionTester.TestAccessAsync(
-            savedServerAddress,
-            clientSettings.Server.PasswordKey);
+        IsServerConnectionTestRunning = true;
+        ServerConnectionTestResult result;
+        try
+        {
+            result = await serverConnectionTester.TestAccessAsync(
+                savedServerAddress,
+                clientSettings.Server.PasswordKey);
+        }
+        finally
+        {
+            IsServerConnectionTestRunning = false;
+        }
+
         if (!result.IsSuccessful)
         {
             ServerConnectionTestMessage = result.Message;
