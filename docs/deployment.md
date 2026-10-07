@@ -44,6 +44,8 @@ Normal branch pushes do not run the relay-image workflow. To publish a release, 
 
 The script restores the repository-pinned Nerdbank.GitVersioning tool, uses `nbgv tag` to calculate and create the current commit's version tag (for example, `v1.0.14`), and pushes only that tag. The tag push starts the GitHub Actions workflow, which verifies the tag against NB.GV before publishing the versioned relay image and `latest`.
 
+The same tag push also starts the **Publish client release** workflow on a GitHub-hosted Windows runner. It verifies the tag, builds and smoke-tests the installer (and the portable zip, once `build/Build-Portable.ps1` exists on `main`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page. To embed a private-CA relay root in the installer, store the base64 of the public `.crt` in the repository secret `RELAY_ROOT_CERTIFICATE`; leave it unset for a publicly trusted relay. The build is unsigned, like a local one.
+
 Preview the release without creating or pushing a tag with:
 
 ```powershell
