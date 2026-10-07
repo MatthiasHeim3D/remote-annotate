@@ -630,6 +630,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     PointerSettings.ClampDrawingOpacityPercent(value)))
             {
                 RaisePropertyChanged(nameof(DrawingOpacityLabel));
+                // Applied as the slider moves, like the annotation colour, not on save.
+                Annotator.SetDrawingOpacityPercent(drawingOpacityPercent);
             }
         }
     }
@@ -1729,9 +1731,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(Room));
         RaisePropertyChanged(nameof(EmptyClientListMessage));
         Annotator.SetUsageHintsState(ShowUsageHints, hasShownUsageHints);
-        Annotator.SetDrawingOpacityPercent(DrawingOpacityPercent);
-        // The annotation colour is deliberately absent: it was already applied the moment it was
-        // picked, so saving it here would only repeat that.
+        // The drawing opacity and annotation colour are deliberately absent: both were already
+        // applied the moment they were changed, so saving them here would only repeat that.
         startupRegistrationService?.SetEnabled(IsLaunchAtStartup);
         RaiseServerAddressCommandState();
     }
