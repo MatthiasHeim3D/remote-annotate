@@ -138,6 +138,48 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SubmittingANewServerPassword_HidesTheOldErrorAndShowsCheckingUntilTheRelayAnswers()
+    {
+        using var overlay = new FakeOverlayService();
+        var relay = new FakeRelayClient { RejectsServerPassword = true };
+        var settings = new ClientSettings();
+        settings.Server.PasswordKey = "wrong-key";
+        using var viewModel = new MainWindowViewModel(
+            new FakeMonitorService([CreateMonitor("DISPLAY1", isPrimary: true)]),
+            overlay,
+            hostRelayClient: relay,
+            clientSettings: settings);
+        relay.RaiseConnectionStatus(
+            RelayConnectionStatus.Unauthorized,
+            "The server password is not correct.");
+        Assert.True(viewModel.ShowServerPasswordWarning);
+
+        relay.RejectsServerPassword = false;
+        relay.CapabilitiesGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.ChangeServerPasswordCommand.Execute(null);
+        viewModel.ServerPasswordInput = "the right password";
+        var apply = viewModel.ApplyServerPasswordDraftAsync();
+        while (relay.RelayCapabilitiesRequestCount == 0)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.True(viewModel.IsCheckingServerPassword);
+        Assert.Equal("Checking...", viewModel.ServerPasswordCheckMessage);
+        Assert.False(viewModel.ShowServerPasswordWarning);
+        Assert.False(viewModel.IsServerPasswordRejected);
+
+        relay.RaiseConnectionStatus(RelayConnectionStatus.Connected, "Connected to relay.");
+        relay.CapabilitiesGate.SetResult();
+        await apply;
+
+        Assert.False(viewModel.IsCheckingServerPassword);
+        Assert.Empty(viewModel.ServerPasswordCheckMessage);
+        Assert.False(viewModel.IsServerPasswordRejected);
+    }
+
+    [Fact]
     public void WithoutAStoredServerPassword_TheBoxIsOfferedWithoutAChangeStep()
     {
         using var overlay = new FakeOverlayService();

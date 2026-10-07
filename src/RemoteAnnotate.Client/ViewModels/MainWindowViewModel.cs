@@ -68,6 +68,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private bool hasServerPassword;
     private bool isChangingServerPassword;
     private bool serverPasswordRequired;
+    private bool isCheckingServerPassword;
     private bool hasRelayCapabilities;
     private string serverPasswordInput = string.Empty;
     private string roomInput = RoomName.DefaultDisplayName;
@@ -523,7 +524,27 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>The relay refused the password this client presented, or its lack of one.</summary>
     public bool IsServerPasswordRejected =>
-        hostRelayClient?.Status == RelayConnectionStatus.Unauthorized;
+        !IsCheckingServerPassword
+        && hostRelayClient?.Status == RelayConnectionStatus.Unauthorized;
+
+    /// <summary>
+    /// A newly submitted password has been handed to the relay and its verdict has not arrived.
+    /// Until it does, the previous verdict says nothing about it, so it is not shown.
+    /// </summary>
+    public bool IsCheckingServerPassword
+    {
+        get => isCheckingServerPassword;
+        private set
+        {
+            if (SetProperty(ref isCheckingServerPassword, value))
+            {
+                RaiseServerPasswordProperties();
+            }
+        }
+    }
+
+    public string ServerPasswordCheckMessage =>
+        IsCheckingServerPassword ? "Checking..." : string.Empty;
 
     /// <summary>
     /// This client reached the relay without a password, which means the relay lets in whoever
@@ -535,7 +556,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool ShowServerPasswordWarning => ServerPasswordWarning.Length > 0;
 
-    public string ServerPasswordWarning => IsServerPasswordRejected
+    public string ServerPasswordWarning => IsCheckingServerPassword
+        ? string.Empty
+        : IsServerPasswordRejected
         ? HasServerPassword
             ? "This relay did not accept this password."
             : "This relay requires a server password."
@@ -1976,6 +1999,22 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             clientSettings.Server.PasswordKey = key;
         }
 
+        // The error about the previous password would otherwise stay up while the relay is
+        // asked about this one, which reads as the new password being wrong too.
+        SetStatus("Checking the server password...", false);
+        IsCheckingServerPassword = true;
+        try
+        {
+            await ApplyServerPasswordKeyCoreAsync(key);
+        }
+        finally
+        {
+            IsCheckingServerPassword = false;
+        }
+    }
+
+    private async Task ApplyServerPasswordKeyCoreAsync(string? key)
+    {
         try
         {
             if (hostRelayClient is not null)
@@ -1997,7 +2036,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         // relay's verdict on the new key arrives when this client presents it, so ask now: that
         // is what turns a wrong password into the warning here instead of a silent disconnection
         // the user meets later as an unreachable relay.
-        _ = await RefreshRelayCapabilitiesAsync();
+        var failure = await RefreshRelayCapabilitiesAsync();
+        if (failure is null)
+        {
+            SetStatus("Server password accepted.", false);
+        }
     }
 
     /// <summary>
@@ -2035,6 +2078,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(ShowServerPasswordSetState));
         RaisePropertyChanged(nameof(ShowServerPasswordWarning));
         RaisePropertyChanged(nameof(ServerPasswordWarning));
+        RaisePropertyChanged(nameof(ServerPasswordCheckMessage));
         RaisePropertyChanged(nameof(IsRelayUnprotected));
         RaisePropertyChanged(nameof(IsServerPasswordRejected));
         RaisePropertyChanged(nameof(EmptyClientListMessage));
