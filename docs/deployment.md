@@ -39,7 +39,7 @@ No MSI, WiX, signing certificate, machine configuration, service, driver, or inb
 Normal branch pushes do not publish anything. To release, open **Actions → Release → Run workflow** on GitHub, leave the commit empty to release the tip of `main` or paste the SHA of an earlier commit on `main`, and run it. The workflow uses `nbgv tag` to calculate that commit's version tag (for example, `v1.0.14`), refuses a commit that is not on `main` or a tag that already exists, pushes the tag, and then builds both outputs for it:
 
 - **Relay image:** the **Publish relay image** workflow verifies the tag against Nerdbank.GitVersioning and publishes the versioned relay image and `latest` to GitHub Container Registry.
-- **Client release:** the **Publish client release** workflow runs on a GitHub-hosted Windows runner. It builds and smoke-tests the installer (and the portable zip, once `build/Build-Portable.ps1` exists on `main`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page.
+- **Client release:** the **Publish client release** workflow runs on a GitHub-hosted Windows runner. It builds and smoke-tests the installer and the portable zip (`build/Build-Portable.ps1`, `build/Test-Portable.ps1`), and creates a **draft** GitHub release with the setup exe, the zip and their `.sha256` files attached. Review the generated notes and assets, then publish the draft from the Releases page.
 
 To embed a private-CA relay root in the installer, store the base64 of the public `.crt` in the repository secret `RELAY_ROOT_CERTIFICATE`; leave it unset for a publicly trusted relay. The build is unsigned, like a local one. Pushing a `v*` tag by hand (`dotnet nbgv tag HEAD`, then `git push origin <tag>`) still starts both workflows directly.
 
@@ -74,7 +74,7 @@ An interactive uninstall asks whether to also delete `%LocalAppData%\RemoteAnnot
 
 ## Portable (no-installer) build
 
-For locked-down PCs, one-off support sessions, or running from a USB stick or network share, build a zip of the same self-contained publish instead of the installer. It needs no setup, no administrator rights, and no .NET install on the target PC:
+The release workflow above builds this zip and attaches it, with its `.sha256`, to the draft release. For locked-down PCs, one-off support sessions, or running from a USB stick or network share, you can also build a zip of the same self-contained publish locally instead of using the installer. It needs no setup, no administrator rights, and no .NET install on the target PC:
 
 ```powershell
 .\build\Build-Portable.ps1
